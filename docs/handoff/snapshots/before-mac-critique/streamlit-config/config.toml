@@ -1,0 +1,16 @@
+[theme]
+base = "dark"
+primaryColor = "#2fbf71"
+backgroundColor = "#0b0f0d"
+secondaryBackgroundColor = "#111815"
+textColor = "#e6ece8"
+font = "sans serif"
+baseRadius = "6px"
+
+[server]
+# headless skips Streamlit's first-run email prompt, which otherwise blocks startup.
+# Open http://localhost:8501 yourself after launching.
+headless = true
+
+[browser]
+gatherUsageStats = false

@@ -1,0 +1,948 @@
+--- before/ui.py
++++ after/ui.py
+@@ -38,18 +38,25 @@
+          color: var(--muted); margin: 0 0 .3rem 0; }
+ .stApp .page-title { font-size: 1.75rem; font-weight: 650; margin: 0; padding: 0; color: var(--text);
+               line-height: 1.25; }
+-.stApp .page-desc { color: var(--muted); margin: .35rem 0 1.5rem 0; max-width: 64ch; }
++.stApp .page-desc { color: var(--muted); margin: .35rem 0 1.5rem 0; max-width: 80ch; }
+ 
+-/* cards */
+-.card, [data-testid="stVerticalBlockBorderWrapper"] {
++/* cards: HTML cards (.card) and bordered panels (ui.panel). A keyed container gets the
++   class st-key-<key>, which is how Streamlit lets a page style one container. */
++.card, .stApp [class*="st-key-panel-"] {
+   background: var(--surface) !important; border: 1px solid var(--border) !important;
+   border-radius: 8px !important; }
+ .card { padding: 1rem 1.2rem; margin-bottom: 1rem; }
++.stApp [class*="st-key-panel-"] { padding: 1rem 1.2rem !important; }
+ .stApp .card h2, .stApp h2.ctitle { margin: 0 0 .7rem 0; padding: 0; font-size: .74rem; text-transform: uppercase;
+   letter-spacing: .1em; color: var(--muted); font-weight: 650; line-height: 1.4; }
+ /* section titles are real h2 headings; hide the link icon Streamlit adds to headings */
+ [data-testid="stHeaderActionElements"] { display: none !important; }
+-[data-testid="stVerticalBlockBorderWrapper"] > div { padding-bottom: .3rem; }
++/* Streamlit pulls each text block up by 1rem to cancel a paragraph's bottom margin. Text
++   that ends a block with a smaller margin gets that 1rem back, so it never touches a border. */
++.stApp [data-testid="stMarkdownContainer"] > :is(p.hint, p.cm-axis, .empty, ul.tips):last-child {
++  margin-bottom: 1rem; }
++/* columns stacked on a phone: the same 1rem gap as between panels, not the 4rem column gap */
++.stApp [data-testid="stHorizontalBlock"] { row-gap: 1rem; }
+ 
+ /* status tags (labels, not buttons) */
+ .tag { display: inline-block; padding: .15rem .55rem; border-radius: 4px; font-size: .78rem;
+@@ -110,6 +117,8 @@
+ .tbl-wrap { overflow-x: auto; max-width: 100%; }
+ .stApp .card a, .stApp .hint a { color: var(--accent); text-decoration: underline; }
+ .tbl-wrap:focus-visible, .stApp a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
++/* Tab also stops on the scrolling page area; show that stop like every other one */
++.stApp [data-testid="stMain"]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+ .tbl caption, .cm caption { caption-side: top; text-align: left; color: var(--muted); font-size: .8rem;
+   padding: 0 0 .4rem 0; }
+ .tbl { width: 100%; border-collapse: collapse; font-size: .88rem; }
+@@ -142,6 +151,13 @@
+ 
+ /* controls: small radius, no pills */
+ .stButton button { border-radius: 6px !important; font-weight: 600 !important; }
++/* green buttons (Start recording, Train model, Save meme): dark text, 8.1:1. Streamlit's
++   white text on this green is 2.4:1. */
++.stApp [data-testid^="stBaseButton-primary"], .stApp [data-testid^="stBaseButton-primary"] * {
++  color: var(--bg) !important; }
++/* Streamlit darkens them on hover to #20834d, where dark text is 4.1:1; lighten instead (9.1:1) */
++.stApp [data-testid^="stBaseButton-primary"]:is(:hover, :active):not(:disabled) {
++  background: #45c983 !important; border-color: #45c983 !important; }
+ [data-testid="stProgress"] > div, [data-testid="stProgress"] div[role="progressbar"],
+ [data-testid="stProgress"] div[role="progressbar"] > div { border-radius: 2px !important; }
+ iframe { border-radius: 6px; }
+@@ -201,6 +217,12 @@
+     return text
+ 
+ 
++def panel(key: str):
++    """A bordered panel that looks like the HTML cards. Use it instead of
++    st.container(border=True), which Streamlit draws with its own outline."""
++    return st.container(border=True, key=f"panel-{key}")
++
++
+ def card_title(text: str) -> None:
+     """Section title inside a bordered container, as a real h2 for screen readers."""
+     st.markdown(f'<h2 class="ctitle">{esc(text)}</h2>', unsafe_allow_html=True)
+@@ -324,14 +346,11 @@
+             f'<span>Threshold {pct(threshold)}</span></div>')
+ 
+ 
+-def recognition_card(problem: Optional[pr.PredictorError], prediction: Optional[pr.Prediction],
+-                     playing: bool, live: bool, stale: "list[str]",
+-                     steady: Optional[pr.Steady] = None,
+-                     records: Optional[Dict[str, dm.MemeRecord]] = None) -> str:
+-    """HTML for the recognition panel. Each state has its own tag and wording. A gesture
+-    name only appears as the result once it is steady (LiveRecognizer.steady), so a
+-    single frame neither shows a gesture nor hides one that is being held. `records`
+-    (memes.json) supplies the gesture names, so this panel and the meme panel agree."""
++def _recognition_state(problem: Optional[pr.PredictorError], prediction: Optional[pr.Prediction],
++                       playing: bool, live: bool, stale: "list[str]", steady: Optional[pr.Steady],
++                       records: Optional[Dict[str, dm.MemeRecord]]) -> tuple:
++    """(tags, headline, recognised, detail, hint, scores_title) for the recognition panel.
++    `scores_title` is empty when the state has no scores worth listing."""
+     def name(label: Optional[str]) -> str:
+         return esc(dm.display_name(label, records))
+ 
+@@ -397,20 +416,52 @@
+         detail = confidence_bar(prediction.confidence, prediction.threshold, True)
+         scores_title = "Scores in this frame"
+ 
+-    body = (f'<div>{"".join(tags + model_tags)}</div>'
++    return "".join(tags + model_tags), headline, recognised, detail, hint, scores_title
++
++
++def _scores_table(prediction: pr.Prediction, title: str,
++                  records: Optional[Dict[str, dm.MemeRecord]]) -> str:
++    return html_table(["Gesture", "Score"],
++                      [[dm.display_name(g, records), score_pct(p)] for g, p in prediction.top],
++                      caption=f"{title}.")
++
++
++def recognition_card(problem: Optional[pr.PredictorError], prediction: Optional[pr.Prediction],
++                     playing: bool, live: bool, stale: "list[str]",
++                     steady: Optional[pr.Steady] = None,
++                     records: Optional[Dict[str, dm.MemeRecord]] = None,
++                     scores: bool = True) -> str:
++    """HTML for the recognition panel. Each state has its own tag and wording. A gesture
++    name only appears as the result once it is steady (LiveRecognizer.steady), so a
++    single frame neither shows a gesture nor hides one that is being held. `records`
++    (memes.json) supplies the gesture names, so this panel and the meme panel agree.
++    With `scores=False` the top scores are left out; the dashboard shows them below the
++    meme with scores_card, so the meme stays in view."""
++    tags, headline, recognised, detail, hint, scores_title = _recognition_state(
++        problem, prediction, playing, live, stale, steady, records)
++    body = (f'<div>{tags}</div>'
+             f'<div class="big{" ok" if recognised else ""}">{headline}</div>'
+             f'{detail}<p class="hint">{hint}</p>')
+-    if scores_title and prediction.top:
+-        body += ('<div class="gap"></div>'
+-                 + html_table(["Gesture", "Score"],
+-                              [[dm.display_name(g, records), score_pct(p)] for g, p in prediction.top],
+-                              caption=f"{scores_title}."))
++    if scores and scores_title and prediction.top:
++        body += '<div class="gap"></div>' + _scores_table(prediction, scores_title, records)
+     if stale and problem is None:
+         body += ('<p class="hint">' + " ".join(esc(s) for s in stale)
+-                 + f" Retrain on the {link('performance', 'Model performance')} page.</p>")
++                 + f" Train model is on the {link('performance', 'Model performance')} page.</p>")
+     return f'<div class="card"><h2>Recognition</h2>{body}</div>'
+ 
+ 
++def scores_card(problem: Optional[pr.PredictorError], prediction: Optional[pr.Prediction],
++                playing: bool, live: bool, stale: "list[str]",
++                steady: Optional[pr.Steady] = None,
++                records: Optional[Dict[str, dm.MemeRecord]] = None) -> str:
++    """The top scores that recognition_card leaves out with scores=False, as their own panel.
++    Empty in the states that list no scores (camera off, no hand, No gesture and so on)."""
++    *_, scores_title = _recognition_state(problem, prediction, playing, live, stale, steady, records)
++    if not (scores_title and prediction.top):
++        return ""
++    return f'<div class="card"><h2>Top scores</h2>{_scores_table(prediction, scores_title, records)}</div>'
++
++
+ # ---------------------------------------------------------------------------
+ # Meme result
+ # ---------------------------------------------------------------------------
+@@ -487,13 +538,15 @@
+     uri = _data_uri(str(path), path.stat().st_mtime_ns)
+     rating = (f"Ball Knowledge: {esc(record.ball_knowledge_level)}" if record.ball_knowledge_level
+               else "Ball Knowledge rating not set")
++    untitled = ("" if record.meme_title
++                else '<p class="hint">No meme title set, so the gesture name is shown.</p>')
+     description = (f'<p class="meme-desc">{esc(record.description)}</p>' if record.description
+                    else '<p class="hint">No description set.</p>')
+     return card(
+         f'<img class="meme-img" src="{uri}" alt="{esc("Meme: " + record.title)}">'
+         f'<div>{tag(esc(record.gesture_name or label), "ok")}'
+         f'{tag(rating, "off" if not record.ball_knowledge_level else "ok")}</div>'
+-        f'<div class="big">{esc(record.title)}</div>{description}'
++        f'<div class="big">{esc(record.title)}</div>{untitled}{description}'
+         f'<p class="hint">The rating and description are yours, set on the {link("memes", "Memes")} '
+         "page. The model only recognises the gesture.</p>")
+ 
+@@ -543,9 +596,11 @@
+ # times per second whenever the camera was denied or busy, so it was dropped.
+ 
+ _IFRAME_CSS = (
++    "html,body{background:transparent !important}"            # the panel's colour shows through
+     "button.MuiButton-text{display:none !important}"          # the Select Device button
+     "button{text-transform:none !important;letter-spacing:0 !important;"
+     "border-radius:6px !important;font-weight:600 !important}"
++    "button:focus-visible{outline:2px solid #2fbf71 !important;outline-offset:2px}"   # keyboard focus
+ )
+ 
+ _IFRAME_SCRIPT = """
+--- before/dataset_manager.py
++++ after/dataset_manager.py
+@@ -89,8 +89,10 @@
+         from PIL import Image
+         with Image.open(path) as img:
+             img.verify()
+-    except Exception as exc:                     # truncated, not an image, unreadable
+-        return f"{path.name} cannot be read as an image ({type(exc).__name__})."
++    except Exception:                            # truncated, not an image, unreadable
++        kinds = [s.lstrip(".").upper() for s in config.MEME_IMAGE_SUFFIXES]
++        return (f"{path.name} cannot be read as an image. Choose a "
++                f"{', '.join(kinds[:-1])} or {kinds[-1]} file.")
+     return None
+ 
+ 
+--- before/train_model.py
++++ after/train_model.py
+@@ -248,20 +248,24 @@
+     }
+ 
+ 
+-def make_warnings(report: dict) -> List[str]:
+-    """Plain-language cautions about how far the numbers can be trusted."""
++def make_warnings(report: dict, name: Optional[Callable[[str], str]] = None) -> List[str]:
++    """Plain-language cautions about how far the numbers can be trusted. `name` turns a
++    gesture id into the name the pages show (dataset_manager.display_name); the report
++    itself stores the ids."""
++    name = name or (lambda label: label)
+     warns = []
+     test = report["test"]
+     per_class = report["dataset"]["per_class"]
+     few = sorted(l for l, d in per_class.items() if d["sessions"] < config.MIN_SESSIONS_PER_CLASS)
+     if few:
+         warns.append(
+-            f"Fewer than {config.MIN_SESSIONS_PER_CLASS} recordings for: {', '.join(few)}. When one of "
++            f"Fewer than {config.MIN_SESSIONS_PER_CLASS} recordings for: {', '.join(map(name, few))}. When one of "
+             "them is held out, the model learns that gesture from the remaining recording alone, so "
+             "the held-out scores are a rough guide. Record more sessions.")
+     small = [l for l, d in per_class.items() if d["samples"] < 30]
+     if small:
+-        warns.append(f"Very few samples for: {', '.join(sorted(small))}. Scores for these are unreliable.")
++        warns.append(f"Very few samples for: {', '.join(map(name, sorted(small)))}. "
++                     "Scores for these are unreliable.")
+     counts = [d["samples"] for d in per_class.values()]
+     if counts and max(counts) > 3 * max(1, min(counts)):
+         warns.append("The gestures have very unequal numbers of samples. Collect more for the smallest ones.")
+--- before/README.md
++++ after/README.md
+@@ -57,8 +57,12 @@
+ 
+ Samples are saved to `data/samples.csv` (landmark numbers only, never images
+ or video). Use **Manage data** to undo the last recording or delete a gesture.
+-Frames without a detected hand are never saved.
++Frames without a detected hand are never saved. If you press Stop camera while
++recording, the samples recorded so far are kept.
+ 
++The dataset list shows each gesture by the name you set on the Memes page, with the
++id its samples are saved under next to it ("First meme first_meme").
++
+ ## Import recorded videos (optional)
+ 
+ You can also turn video files into samples, for example clips recorded with Photo Booth.
+@@ -160,7 +164,7 @@
+ | No hand detected | No hand in the frame, so nothing is classified. |
+ | Unrecognised | The best score is below the confidence threshold. No gesture is shown. |
+ | Checking | The latest frame passed the threshold, but the gesture has not held steady yet. No gesture is shown as the result. |
+-| Recognised | A steady gesture: its name, its average confidence over the frames that confirmed it, and the latest frame's top scores. |
++| Recognised | A steady gesture: its name and its average confidence over the frames that confirmed it. Its meme appears right below, and the latest frame's top scores below the meme, in the Top scores panel. |
+ | No gesture | The steady result is your `none` gesture: a hand, but none of your gestures. No meme is shown. |
+ 
+ How it works:
+@@ -195,8 +199,9 @@
+ - The `none` gesture is never added.
+ - Confidence is the average over the frames that confirmed the gesture.
+ 
+-Both panels sit in a row below the camera, so the Recognition and Meme result panels
+-stay next to the video. The **Live statistics** tiles show the **latest gesture** and its time, how many gestures were
++Both panels sit in a row below the camera, so the Recognition, Meme result and Top
++scores panels stay next to the video. On a laptop screen the gesture and its meme are
++both in view while you hold a gesture. The **Live statistics** tiles show the **latest gesture** and its time, how many gestures were
+ **recognised this session**, the number of gesture classes, frames per second, latency
+ and the model state. The panel keeps the last `HISTORY_LENGTH` (10) entries; the count
+ includes all of them.
+@@ -215,7 +220,10 @@
+   the gesture name, meme title, Ball Knowledge rating and description, choose an image if
+   you want to replace it (up to 10 MB), and press Save meme. The panel on the right is the
+   dashboard's Meme result panel, so you see exactly what will appear. The table at the top
+-  shows what is still not set.
++  shows what is still not set. After a save the form shows what was saved, with the upload
++  box empty again. The 10 MB limit is set in two places that must stay equal:
++  `MEME_MAX_UPLOAD_MB` in `config.py` and `maxUploadSize` in `.streamlit/config.toml` (a
++  test checks it).
+ - **From a gesture folder:** put exactly one image (.jpg, .jpeg, .png, .webp or .gif)
+   next to the clips and run `import_videos.py` on the folder. The image is copied to
+   `assets/memes/<gesture>.<extension>`. Fields you already set are kept.
+--- before/views/collector.py
++++ after/views/collector.py
+@@ -11,6 +11,7 @@
+ 
+ import config
+ import data_collector as dc
++import dataset_manager as dm
+ import ui
+ from ui import camera_state, hand_tag, tag
+ 
+@@ -28,6 +29,22 @@
+ store = dc.DatasetStore()
+ NEW_OPTION = "New gesture..."
+ 
++try:
++    memes = dm.MemeLibrary().load()
++except dm.MemeError:
++    memes = {}                               # the dashboard and the Memes page say why
++
++
++def name(label: str) -> str:
++    """The gesture's name from the Memes page, the same as every other page shows."""
++    return dm.display_name(label, memes)
++
++
++def name_and_id(label: str) -> str:
++    """'First meme (first_meme)': the name, plus the id the samples are saved under."""
++    shown = name(label)
++    return shown if shown == label else f"{shown} ({label})"
++
+ ui.page_header(
+     "Data collector",
+     "Record labelled hand landmark samples for each gesture you want the model to learn. "
+@@ -57,7 +74,7 @@
+ 
+ # ------------------------------------------------------------------ camera and progress
+ with left:
+-    with st.container(border=True):
++    with ui.panel("camera"):
+         ui.card_title("Camera")
+         ctx = ui.camera_widget(CAMERA_KEY, processor)
+ 
+@@ -77,7 +94,7 @@
+                 try:
+                     n = store.append(result)
+                     if n:
+-                        notify("ok", f"Saved {n} samples for {result.label}.")
++                        notify("ok", f"Saved {n} samples for {name(result.label)}.")
+                     else:
+                         notify("warn", "Nothing was saved because no hand was detected during the recording.")
+                 except dc.DatasetError as exc:
+@@ -91,10 +108,10 @@
+                 st.markdown(
+                     f'<div class="count">{int(s.countdown_left) + 1}</div>'
+                     '<p class="hint" style="text-align:center">Get your hand in view and make the '
+-                    f"{s.label} gesture.</p>", unsafe_allow_html=True)
++                    f"{ui.esc(name(s.label))} gesture.</p>", unsafe_allow_html=True)
+             elif s.state == dc.RECORDING:
+                 st.markdown(
+-                    f'<p><span class="rec-dot"></span><b>Recording {s.label}</b>: '
++                    f'<p><span class="rec-dot"></span><b>Recording {ui.esc(name(s.label))}</b>: '
+                     f"{s.collected} of {s.target} samples</p>", unsafe_allow_html=True)
+                 st.progress(min(1.0, s.collected / s.target))
+                 if not stats.hand_detected:
+@@ -111,7 +128,7 @@
+     if ctx.state.playing is False and not busy:
+         processor.reset()
+ 
+-    with st.container(border=True):
++    with ui.panel("tips"):
+         ui.card_title("Tips for good data")
+         st.markdown(
+             '<ul class="tips">'
+@@ -129,10 +146,11 @@
+     if msg:
+         {"ok": st.success, "warn": st.warning, "bad": st.error}[msg[0]](msg[1])
+ 
+-    with st.container(border=True):
++    with ui.panel("record"):
+         ui.card_title("Record a gesture")
+ 
+-        choice = st.selectbox("Gesture", existing + [NEW_OPTION], disabled=busy)
++        choice = st.selectbox("Gesture", existing + [NEW_OPTION], disabled=busy,
++                              format_func=lambda g: g if g == NEW_OPTION else name_and_id(g))
+         label, label_error = None, None
+         if choice == NEW_OPTION:
+             raw = st.text_input("New gesture name", placeholder="e.g. four_gesture", disabled=busy)
+@@ -163,14 +181,14 @@
+                        use_container_width=True, disabled=label is None):
+             stats = processor.get_stats()
+             if not ctx.state.playing:
+-                notify("warn", "Press Start camera above the video first.")
++                notify("warn", "Start the camera first: press Start camera under the video.")
+             elif stats.error:
+                 notify("bad", stats.error)
+             else:
+                 recorder.start(label, target, person)
+             st.rerun()
+ 
+-    with st.container(border=True):
++    with ui.panel("dataset"):
+         ui.card_title("Your dataset")
+         if summary is None:
+             pass
+@@ -188,7 +206,9 @@
+                 pct = min(100, round(100 * row.samples / config.TARGET_GOOD_PER_CLASS))
+                 label_text = {"ok": "Ready", "warn": "Needs sessions", "bad": "Needs samples"}[kind]
+                 st.markdown(
+-                    f'<div class="cls"><div style="flex:1"><div class="n">{row.label}</div>'
++                    f'<div class="cls"><div style="flex:1"><div class="n">{ui.esc(name(row.label))}'
++                    + (f' <span class="m">{row.label}</span>' if name(row.label) != row.label else "")
++                    + '</div>'
+                     f'<div class="m">{row.samples} samples, {row.recordings} recording'
+                     f'{"s" if row.recordings != 1 else ""}. {hint}.</div>'
+                     f'<div class="meter {kind}"><div style="width:{pct}%"></div></div></div>'
+@@ -208,18 +228,19 @@
+                 except dc.DatasetError:
+                     last = None
+                 if last and st.button(
+-                    f"Undo last recording ({last['samples']} samples of {last['label']})",
++                    f"Undo last recording ({last['samples']} samples of {name(last['label'])})",
+                     disabled=busy, use_container_width=True,
+                 ):
+                     removed = store.delete_session(last["session_id"])
+                     notify("ok", f"Removed the last recording ({removed} samples).")
+                     st.rerun()
+ 
+-                victim = st.selectbox("Delete all samples of a gesture", existing, disabled=busy)
+-                sure = st.checkbox(f"Yes, permanently delete every {victim} sample")
++                victim = st.selectbox("Delete all samples of a gesture", existing, disabled=busy,
++                                      format_func=name_and_id)
++                sure = st.checkbox(f"Yes, permanently delete every {name(victim)} sample")
+                 if st.button("Delete gesture data", disabled=busy or not sure):
+                     removed = store.delete_label(victim)
+-                    notify("ok", f"Deleted {removed} samples of {victim}.")
++                    notify("ok", f"Deleted {removed} samples of {name(victim)}.")
+                     st.rerun()
+ 
+         st.markdown(f'<p class="hint">Stored in <code>data/{config.SAMPLES_CSV.name}</code>. '
+--- before/views/dashboard.py
++++ after/views/dashboard.py
+@@ -79,7 +79,7 @@
+ left, right = st.columns([3, 2], gap="large")
+ 
+ with left:
+-    with st.container(border=True):
++    with ui.panel("camera"):
+         ui.card_title("Camera")
+         ctx = ui.camera_widget(CAMERA_KEY, processor)
+ 
+@@ -117,11 +117,16 @@
+         except dm.MemeError as exc:
+             memes, memes_error = None, str(exc)
+ 
++        # The result first: the gesture, then its meme, then the scores behind it, so the meme
++        # is in view on a laptop screen while a gesture is held.
+         st.markdown(ui.recognition_card(model_problem, prediction, playing, live, stale, steady,
+-                                        memes),
++                                        memes, scores=False),
+                     unsafe_allow_html=True)
+         st.markdown(ui.meme_card(steady.label if steady else None, memes, memes_error, meme_library),
+                     unsafe_allow_html=True)
++        scores = ui.scores_card(model_problem, prediction, playing, live, stale, steady, memes)
++        if scores:
++            st.markdown(scores, unsafe_allow_html=True)
+ 
+     live_panels()
+ 
+@@ -139,7 +144,7 @@
+         memes = None                         # the meme panel above shows the reason
+     model_label, _ = ui.model_state(model_problem, stale)
+     latest = history[0] if history else None
+-    stats_col, history_col = st.columns(2, gap="large")
++    stats_col, history_col = st.columns([3, 2], gap="large")     # lines up with the row above
+     with stats_col:
+         st.markdown(
+             '<div class="card"><h2>Live statistics</h2><div class="tiles three">'
+--- before/views/memes.py
++++ after/views/memes.py
+@@ -60,46 +60,50 @@
+ left, right = st.columns([3, 2], gap="large")
+ 
+ with left:
+-    with st.container(border=True):
++    with ui.panel("memes-table"):
+         ui.card_title("Your memes")
+         rows = []
+         for g in gestures:
+             r = records.get(g)
+             image = ("Missing" if r is None or library.image_problem(r) else "Set")
+-            rows.append([dm.display_name(g, records), image,
++            rows.append([dm.display_name(g, records), image, state(r, lambda x: x.meme_title),
+                          state(r, lambda x: x.ball_knowledge_level),
+                          state(r, lambda x: x.description)])
+-        st.markdown(ui.html_table(["Gesture", "Image", "Rating", "Description"], rows,
+-                                  numeric_from=4,
++        st.markdown(ui.html_table(["Gesture", "Image", "Title", "Rating", "Description"], rows,
++                                  numeric_from=5,
+                                   caption="What is set for each gesture's meme."),
+                     unsafe_allow_html=True)
+-        st.markdown(f'<p class="hint">The {config.NONE_LABEL} gesture means a hand with no '
+-                    "gesture, so it never shows a meme and is not listed.</p>",
++        st.markdown(f'<p class="hint">{ui.esc(dm.display_name(config.NONE_LABEL, records))} '
++                    f"(the {config.NONE_LABEL} gesture) is a hand without one of your gestures, so it "
++                    "never shows a meme and is not listed.</p>",
+                     unsafe_allow_html=True)
+ 
+-    with st.container(border=True):
++    with ui.panel("memes-edit"):
+         ui.card_title("Edit a meme")
+         gid = st.selectbox("Gesture", gestures, format_func=lambda g: dm.display_name(g, records))
+         current = records.get(gid, dm.MemeRecord(gid))
+         # One form and one set of widget keys per gesture, so text typed for one gesture and
+-        # not saved never appears in another gesture's form.
+-        with st.form(key=f"meme-form-{gid}", border=False):
+-            name = st.text_input("Gesture name", value=current.gesture_name, key=f"meme-name-{gid}",
++        # not saved never appears in another gesture's form. A successful save starts a new
++        # form (the version in the keys), which shows what was saved and an empty upload box.
++        versions = st.session_state.setdefault("meme_form_version", {})
++        form_id = f"{gid}-{versions.get(gid, 0)}"
++        with st.form(key=f"meme-form-{form_id}", border=False):
++            name = st.text_input("Gesture name", value=current.gesture_name, key=f"meme-name-{form_id}",
+                                  max_chars=dm.MAX_TEXT["gesture_name"],
+                                  help=f"Shown on every panel instead of the id {gid}.")
+-            title = st.text_input("Meme title", value=current.meme_title, key=f"meme-title-{gid}",
++            title = st.text_input("Meme title", value=current.meme_title, key=f"meme-title-{form_id}",
+                                   max_chars=dm.MAX_TEXT["meme_title"])
+             rating = st.text_input("Ball Knowledge rating", value=current.ball_knowledge_level,
+-                                   key=f"meme-rating-{gid}",
++                                   key=f"meme-rating-{form_id}",
+                                    max_chars=dm.MAX_TEXT["ball_knowledge_level"],
+                                    placeholder="for example 8/10",
+                                    help="Shown exactly as you type it.")
+-            description = st.text_area("Description", value=current.description, key=f"meme-desc-{gid}",
++            description = st.text_area("Description", value=current.description, key=f"meme-desc-{form_id}",
+                                        max_chars=dm.MAX_TEXT["description"], height=110,
+                                        help="Shown as one paragraph. Line breaks are joined.")
+             upload = st.file_uploader(
+                 "Meme image" if not current.image_path else "Replace the image",
+-                type=[s.lstrip(".") for s in config.MEME_IMAGE_SUFFIXES], key=f"meme-image-{gid}",
++                type=[s.lstrip(".") for s in config.MEME_IMAGE_SUFFIXES], key=f"meme-image-{form_id}",
+                 help=f"Up to {config.MEME_MAX_UPLOAD_MB} MB. Copied into assets/memes/ on this computer. "
+                      "Leave empty to keep the current image.")
+             saved = st.form_submit_button("Save meme", type="primary")
+@@ -112,6 +116,7 @@
+                 st.session_state.memes_msg = (
+                     "ok", f"Saved the meme for {dm.display_name(gid, library.load())}. The Live "
+                           "dashboard shows it the next time this gesture is recognised.")
++                versions[gid] = versions.get(gid, 0) + 1     # after a failed save the form keeps its text
+             except (dm.MemeError, ValueError, OSError) as exc:
+                 st.session_state.memes_msg = ("bad", f"Nothing was saved: {exc}")
+             st.rerun()
+--- before/views/performance.py
++++ after/views/performance.py
+@@ -53,21 +53,25 @@
+     return dm.display_name(label, _memes)
+ 
+ 
++def stamp(iso: str) -> str:
++    """'2026-10-14T11:55:54' -> '14 Oct 11:55', the one way times are written on this page."""
++    try:
++        from datetime import datetime
++        return datetime.fromisoformat(iso).strftime("%d %b %H:%M")
++    except (TypeError, ValueError):
++        return str(iso)
++
++
+ def recording_name(session_id: str) -> str:
+     """'13 Oct 09:55 (191fce)': when the recording started, plus the start of its id.
+     A recording deleted since training shows its id only."""
+     when = recorded.get(session_id)
+     if not when:
+         return session_id
+-    try:
+-        from datetime import datetime
+-        stamp = datetime.fromisoformat(when).strftime("%d %b %H:%M")
+-    except ValueError:
+-        stamp = when
+-    return f"{stamp} ({session_id[:6]})"
++    return f"{stamp(when)} ({session_id[:6]})"
+ 
+ # ------------------------------------------------------------------ training control
+-with st.container(border=True):
++with ui.panel("train"):
+     ui.card_title("Train")
+     st.markdown(
+         '<p class="hint" style="margin-top:0">Trains softmax regression on every recording in '
+@@ -111,7 +115,7 @@
+     st.warning(text)
+ 
+ st.markdown(
+-    tag(f"Trained {esc(report['trained_at'].replace('T', ' '))}", "off")
++    tag(f"Trained {esc(stamp(report['trained_at']))}", "off")
+     + tag(esc(report["model_name"].replace("_", " ")), "off")
+     + tag(f"{esc(report['feature_mode'])} features", "off"),
+     unsafe_allow_html=True,
+@@ -127,13 +131,19 @@
+     unsafe_allow_html=True,
+ )
+ 
+-for text in report["warnings"]:
+-    st.warning(text)
++# The report's cautions, with gestures named as on every other page. A report the
++# current trainer cannot read back shows its saved text instead.
++try:
++    cautions = tm.make_warnings(report, name)
++except (KeyError, TypeError):
++    cautions = report["warnings"]
++if cautions:                         # one box, so the results below stay near the top
++    st.warning("Read these results with care:\n\n" + "\n".join(f"- {text}" for text in cautions))
+ 
+ left, right = st.columns([3, 2], gap="large")
+ 
+ with left:
+-    with st.container(border=True):
++    with ui.panel("per-gesture"):
+         ui.card_title("Per gesture (held-out recordings)")
+         st.markdown(html_table(
+             ["Gesture", "Precision", "Recall", "F1", "Samples"],
+@@ -142,13 +152,13 @@
+             caption="Precision, recall and F1 for each gesture, from recordings the model did not learn from."),
+             unsafe_allow_html=True)
+ 
+-    with st.container(border=True):
++    with ui.panel("confusion"):
+         ui.card_title("Confusion matrix (held-out recordings)")
+         st.markdown(confusion_table([name(l) for l in labels], test["confusion_matrix"]),
+                     unsafe_allow_html=True)
+ 
+ with right:
+-    with st.container(border=True):
++    with ui.panel("mix-ups"):
+         ui.card_title("Gestures it mixes up")
+         if test["top_confusions"]:
+             st.markdown(html_table(
+@@ -159,7 +169,7 @@
+         else:
+             st.markdown('<p class="hint">No mistakes on the held-out recordings.</p>', unsafe_allow_html=True)
+ 
+-    with st.container(border=True):
++    with ui.panel("cutoff"):
+         ui.card_title("Confidence cutoff")
+         st.markdown(html_table(
+             ["Cutoff", "Accepted", "Correct", "In use"],
+@@ -177,7 +187,7 @@
+                     "config.py.</p>",
+                     unsafe_allow_html=True)
+ 
+-    with st.container(border=True):
++    with ui.panel("recordings"):
+         ui.card_title("Each recording, held out")
+         st.markdown(html_table(
+             ["Recording", "Gesture", "Samples", "Correct", "Cost"],
+@@ -190,7 +200,7 @@
+         st.markdown('<p class="hint">Every recording is held out once. No frame of a recording is '
+                     "ever used to train the model that tests it.</p>", unsafe_allow_html=True)
+ 
+-with st.container(border=True):
++with ui.panel("cost"):
+     ui.card_title("Cost function")
+     st.markdown(
+         '<p class="hint" style="margin-top:0">Training minimises one cost: the average cross-entropy, '
+--- before/.streamlit/config.toml
++++ after/.streamlit/config.toml
+@@ -6,11 +6,18 @@
+ textColor = "#e6ece8"
+ font = "sans serif"
+ baseRadius = "6px"
++# Text boxes, menus and the upload box get an outline (3.4:1 on a panel), because they have
++# the same fill as the panels they sit in.
++borderColor = "#5f7067"
++showWidgetBorder = true
+ 
+ [server]
+ # headless skips Streamlit's first-run email prompt, which otherwise blocks startup.
+ # Open http://localhost:8501 yourself after launching.
+ headless = true
++# Largest file the Memes page accepts, in MB. Keep equal to MEME_MAX_UPLOAD_MB in config.py,
++# so the upload box states the same limit that saving enforces.
++maxUploadSize = 10
+ 
+ [browser]
+ gatherUsageStats = false
+--- before/tests/test_pages.py
++++ after/tests/test_pages.py
+@@ -0,0 +1,290 @@
++"""The pages as Streamlit runs them (AppTest), on a small synthetic project in a temporary
++folder: samples, a model trained on them and a memes.json with gesture names. The camera
++widget needs a browser, so the collector page runs with a stand-in that reports the camera
++as off. These tests check what the pages say, not how well any model recognises gestures."""
++import sys
++import tomllib
++from pathlib import Path
++from types import SimpleNamespace
++
++import numpy as np
++import pytest
++
++ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(ROOT))
++
++import config  # noqa: E402
++import data_collector as dc  # noqa: E402
++import dataset_manager as dm  # noqa: E402
++import features  # noqa: E402
++import train_model as tm  # noqa: E402
++import ui  # noqa: E402
++
++N = features.feature_length("hands")
++NAMES = {"first_meme": "First meme", "second_meme": "Second meme"}
++
++
++def _picture(path):
++    from PIL import Image
++    path.parent.mkdir(parents=True, exist_ok=True)
++    Image.new("RGB", (40, 30), (20, 120, 60)).save(path)
++    return path
++
++
++@pytest.fixture(scope="module")
++def project(tmp_path_factory):
++    """first_meme has 2 recordings (so training warns about it), the others 3."""
++    root = tmp_path_factory.mktemp("project")
++    store = dc.DatasetStore(root / "samples.csv", root / "meta.json", "hands")
++    rng = np.random.default_rng(0)
++    for label, sessions in (("first_meme", 2), ("second_meme", 3), (config.NONE_LABEL, 3)):
++        centre = rng.normal(size=N) * 3
++        for s in range(sessions):
++            r = dc.RecordingResult(f"{label}-{s}", label, "", f"2026-10-14T11:3{s}:00")
++            r.samples = [(centre + rng.normal(size=N) * 0.5).astype(np.float32) for _ in range(12)]
++            store.append(r)
++    paths = dict(model_path=root / "m" / "model.joblib", labels_path=root / "m" / "labels.json",
++                 report_path=root / "m" / "report.json")
++    report = tm.train(store=store, **paths)
++    lib = dm.MemeLibrary(root / "app")
++    for gid, name in NAMES.items():
++        lib.update(gid, image=_picture(root / f"{gid}.png"), gesture_name=name)
++    return SimpleNamespace(root=root, store=store, report=report, lib=lib, **paths)
++
++
++@pytest.fixture
++def run(project, monkeypatch):
++    """run('performance.py') -> the AppTest after one run, on the synthetic project."""
++    from streamlit.testing.v1 import AppTest
++    monkeypatch.setattr(dc, "DatasetStore", lambda *a, **k: project.store)
++    monkeypatch.setattr(dm, "MemeLibrary", lambda *a, **k: project.lib)
++    monkeypatch.setattr(config, "REPORT_PATH", project.report_path)
++    monkeypatch.setattr(config, "MODEL_PATH", project.model_path)
++    monkeypatch.setattr(config, "LABELS_PATH", project.labels_path)
++    camera_off = SimpleNamespace(state=SimpleNamespace(playing=False))
++    monkeypatch.setattr(ui, "camera_widget", lambda key, processor: camera_off)
++
++    def go(page):
++        at = AppTest.from_file(str(ROOT / "views" / page), default_timeout=60)
++        at.run()
++        assert not at.exception, at.exception
++        return at
++    return go
++
++
++def page_text(at):
++    return " ".join([m.value for m in at.markdown] + [w.value for w in at.warning]
++                    + [c.value for c in at.caption])
++
++
++# --- one name per gesture on every page ---------------------------------------------------
++
++def test_collector_lists_each_gesture_by_its_name_and_id(run):
++    at = run("collector.py")
++    text = page_text(at)
++    assert '<div class="n">First meme <span class="m">first_meme</span></div>' in text
++    assert '<div class="n">No gesture <span class="m">none</span></div>' in text
++    assert at.selectbox[0].options[:3] == ["First meme (first_meme)", "No gesture (none)",
++                                           "Second meme (second_meme)"]
++
++
++def test_performance_cautions_name_gestures_as_the_tables_do(run):
++    warnings = " ".join(w.value for w in run("performance.py").warning)
++    assert "Fewer than 3 recordings for: First meme." in warnings
++    assert "first_meme" not in warnings
++
++
++def test_cautions_without_names_are_the_saved_ones(project):
++    assert tm.make_warnings(project.report) == project.report["warnings"]
++
++
++# --- the Memes page states what it enforces ---------------------------------------------
++
++def test_upload_box_states_the_same_limit_that_saving_enforces():
++    settings = tomllib.loads((ROOT / ".streamlit" / "config.toml").read_text())
++    assert settings["server"]["maxUploadSize"] == config.MEME_MAX_UPLOAD_MB
++
++
++def test_an_unreadable_image_is_explained_without_a_python_error_name(tmp_path):
++    fake = tmp_path / "holiday.png"
++    fake.write_text("not an image")
++    problem = dm.image_file_problem(fake)
++    assert problem.startswith("holiday.png cannot be read as an image.")
++    assert "Error" not in problem and "JPG" in problem
++
++
++def test_memes_page_shows_whether_each_title_is_set(run):
++    text = page_text(run("memes.py"))
++    assert '<th scope="col" class="">Title</th>' in text
++    assert "No gesture (the none gesture)" in text
++
++
++def test_meme_panel_says_when_no_title_is_set(project):
++    html = ui.meme_card("first_meme", project.lib.load(), None, project.lib)
++    assert "No meme title set" in html and ">First meme<" in html
++
++
++# --- panels and spacing (seen in the browser; these keep the code that does it) -----------
++
++def test_pages_draw_bordered_panels_through_ui_panel():
++    for page in (ROOT / "views").glob("*.py"):
++        assert "st.container(border=True)" not in page.read_text(), page.name
++    assert '[class*="st-key-panel-"]' in ui.CSS
++    assert "stVerticalBlockBorderWrapper" not in ui.CSS     # not in Streamlit 1.65, so it styled nothing
++
++
++def test_ui_panel_keys_the_container_so_the_css_can_find_it(monkeypatch):
++    calls = []
++    monkeypatch.setattr(ui.st, "container", lambda **kw: calls.append(kw) or "panel")
++    assert ui.panel("camera") == "panel"
++    assert calls == [{"border": True, "key": "panel-camera"}]
++
++
++def test_text_that_ends_a_block_gets_its_bottom_margin_back():
++    assert ":is(p.hint, p.cm-axis, .empty, ul.tips):last-child" in ui.CSS
++
++
++def test_both_dashboard_rows_use_the_same_column_split():
++    src = (ROOT / "views" / "dashboard.py").read_text()
++    assert src.count("st.columns([3, 2]") == 2
++
++
++def test_the_camera_frame_lets_the_panel_colour_show():
++    assert "html,body{background:transparent" in ui._IFRAME_CSS
++
++
++def _contrast(a, b):
++    def lum(hex_colour):
++        r, g, b = (int(hex_colour.lstrip("#")[i:i + 2], 16) / 255 for i in (0, 2, 4))
++        f = lambda c: c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
++        return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
++    hi, lo = sorted([lum(a), lum(b)], reverse=True)
++    return (hi + 0.05) / (lo + 0.05)
++
++
++def test_text_boxes_have_an_outline_that_stands_out_on_a_panel():
++    # The panels and Streamlit's text boxes share the fill #111815, so the box is seen by
++    # its outline. WCAG asks for 3:1 for the edge of a control.
++    theme = tomllib.loads((ROOT / ".streamlit" / "config.toml").read_text())["theme"]
++    assert theme["showWidgetBorder"] is True
++    assert theme["secondaryBackgroundColor"] == "#111815" and "--surface:#111815" in ui.CSS
++    assert _contrast(theme["borderColor"], "#111815") >= 3.0
++
++
++# --- the result first ----------------------------------------------------------------------
++
++def test_performance_cautions_share_one_box(run):
++    warnings = run("performance.py").warning
++    assert len(warnings) == 1
++    assert warnings[0].value.startswith("Read these results with care:")
++    assert "\n- Fewer than 3 recordings for: First meme." in warnings[0].value
++
++
++def _recognised():
++    import predictor as pr
++    import time
++    prediction = pr.Prediction(pr.RECOGNISED, "first_meme", 0.93,
++                               (("first_meme", 0.93), ("none", 0.05)), at=time.time())
++    return prediction, pr.Steady("first_meme", 0.9, 6, 7)
++
++
++def test_dashboard_recognition_card_can_leave_the_scores_for_below_the_meme():
++    prediction, steady = _recognised()
++    records = {"first_meme": dm.MemeRecord("first_meme", gesture_name="First meme")}
++    short = ui.recognition_card(None, prediction, True, True, [], steady, records, scores=False)
++    assert ">First meme</div>" in short and "<table" not in short
++    scores = ui.scores_card(None, prediction, True, True, [], steady, records)
++    assert scores.startswith('<div class="card"><h2>Top scores</h2>')
++    assert "Scores in the latest frame." in scores and ">93%<" in scores
++    full = ui.recognition_card(None, prediction, True, True, [], steady, records)
++    assert "<table" in full                      # the default still lists them in the card
++
++
++def test_no_scores_panel_when_there_are_no_scores_to_explain():
++    import predictor as pr
++    import time
++    no_hand = pr.Prediction(pr.NO_HAND, at=time.time())
++    assert ui.scores_card(None, no_hand, True, True, []) == ""
++    assert ui.scores_card(None, None, False, False, []) == ""
++    prediction, _ = _recognised()
++    none = pr.Steady(config.NONE_LABEL, 0.9, 5, 7)
++    assert ui.scores_card(None, prediction, True, True, [], none) == ""
++
++
++def test_dashboard_shows_recognition_then_meme_then_scores():
++    src = (ROOT / "views" / "dashboard.py").read_text()
++    assert "scores=False" in src
++    assert src.index("ui.recognition_card(") < src.index("ui.meme_card(") < src.index("ui.scores_card(")
++
++
++# --- contrast and keyboard focus (measured in the browser; these keep the fixes) ----------
++
++def test_green_buttons_have_dark_text_that_passes_aa():
++    assert '[data-testid^="stBaseButton-primary"]' in ui.CSS and "color: var(--bg) !important" in ui.CSS
++    assert _contrast("#0b0f0d", "#2fbf71") >= 4.5          # --bg on --accent
++    assert _contrast("#ffffff", "#2fbf71") < 4.5           # why: Streamlit's white text fails
++
++
++def test_camera_button_shows_keyboard_focus():
++    assert "button:focus-visible{outline:2px solid #2fbf71" in ui._IFRAME_CSS
++    assert _contrast("#2fbf71", "#111815") >= 3.0          # the ring against the panel
++
++
++def test_the_scrolling_page_area_shows_keyboard_focus():
++    assert '[data-testid="stMain"]:focus-visible { outline: 2px solid var(--accent)' in ui.CSS
++
++
++def test_green_buttons_keep_aa_contrast_when_hovered():
++    assert ':is(:hover, :active):not(:disabled) {\n  background: #45c983 !important' in ui.CSS
++    assert _contrast("#0b0f0d", "#45c983") >= 4.5
++
++
++# --- controls recover and say what to do --------------------------------------------------
++
++@pytest.fixture
++def own_memes(project, monkeypatch, tmp_path):
++    """A Memes library of its own, so saving in a test leaves the shared one unchanged."""
++    lib = dm.MemeLibrary(tmp_path / "app")
++    for gid, name in NAMES.items():
++        lib.update(gid, image=_picture(tmp_path / f"{gid}.png"), gesture_name=name)
++    monkeypatch.setattr(dm, "MemeLibrary", lambda *a, **k: lib)
++    return lib
++
++
++def test_saving_a_meme_starts_a_fresh_form_showing_what_was_saved(run, own_memes):
++    at = run("memes.py")
++    at.text_input(key="meme-title-first_meme-0").input("Title A")
++    at.text_input(key="meme-rating-first_meme-0").input("8/10")
++    at.text_area(key="meme-desc-first_meme-0").input("One line")
++    next(b for b in at.button if b.label == "Save meme").click().run()
++    assert not at.exception
++    assert at.success[0].value.startswith("Saved the meme for First meme.")
++    saved = own_memes.load()["first_meme"]
++    assert (saved.meme_title, saved.ball_knowledge_level, saved.description) == ("Title A", "8/10", "One line")
++    # a new form (and so an empty upload box), filled with the saved text
++    assert at.text_input(key="meme-title-first_meme-1").value == "Title A"
++    assert not [w for w in at.text_input if w.key == "meme-title-first_meme-0"]
++
++
++def test_record_without_the_camera_says_where_the_camera_button_is(run):
++    at = run("collector.py")
++    at.button(key="record-toggle").click().run()
++    assert at.warning[0].value == "Start the camera first: press Start camera under the video."
++
++
++def test_retrain_hint_does_not_say_train_twice():
++    import predictor as pr
++    import time
++    stale = ["The dataset has changed since this model was trained (380 samples then, 400 now). "
++             "Train again to include the changes."]
++    html = ui.recognition_card(None, pr.Prediction(pr.NO_HAND, at=time.time()), True, True, stale)
++    assert "Train again to include the changes. Train model is on the " in html
++    assert "Retrain on the" not in html
++
++
++def test_performance_page_writes_every_time_the_same_way(run, project):
++    from datetime import datetime
++    text = page_text(run("performance.py"))
++    trained = datetime.fromisoformat(project.report["trained_at"]).strftime("%d %b %H:%M")
++    assert f"Trained {trained}</span>" in text
++    assert "14 Oct 11:30 (first_)" in text                 # a recording, named by when it started

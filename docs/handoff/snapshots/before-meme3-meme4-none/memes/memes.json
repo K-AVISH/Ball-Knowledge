@@ -1,0 +1,16 @@
+{
+  "first_meme": {
+    "gesture_name": "First meme",
+    "meme_title": "",
+    "image_path": "assets/memes/first_meme.jpeg",
+    "ball_knowledge_level": "",
+    "description": ""
+  },
+  "second_meme": {
+    "gesture_name": "Second meme",
+    "meme_title": "",
+    "image_path": "assets/memes/second_meme.jpeg",
+    "ball_knowledge_level": "",
+    "description": ""
+  }
+}

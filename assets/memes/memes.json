@@ -1,0 +1,30 @@
+{
+  "first_meme": {
+    "gesture_name": "First meme",
+    "meme_title": "Stressed Higuruma",
+    "image_path": "assets/memes/first_meme.jpeg",
+    "ball_knowledge_level": "",
+    "description": ""
+  },
+  "meme_3": {
+    "gesture_name": "Meme 3",
+    "meme_title": "Absolute Cinema",
+    "image_path": "assets/memes/meme_3.jpg",
+    "ball_knowledge_level": "",
+    "description": ""
+  },
+  "meme_4": {
+    "gesture_name": "Meme 4",
+    "meme_title": "I Guess Bro",
+    "image_path": "assets/memes/meme_4.jpeg",
+    "ball_knowledge_level": "",
+    "description": ""
+  },
+  "second_meme": {
+    "gesture_name": "Second meme",
+    "meme_title": "Peace Out",
+    "image_path": "assets/memes/second_meme.jpeg",
+    "ball_knowledge_level": "",
+    "description": ""
+  }
+}

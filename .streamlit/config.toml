@@ -1,0 +1,28 @@
+[theme]
+base = "dark"
+primaryColor = "#2fbf71"
+backgroundColor = "#0b0f0d"
+secondaryBackgroundColor = "#111815"
+textColor = "#e6ece8"
+font = "sans serif"
+baseRadius = "6px"
+# Text boxes, menus and the upload box get an outline (3.4:1 on a panel), because they have
+# the same fill as the panels they sit in.
+borderColor = "#5f7067"
+showWidgetBorder = true
+
+[server]
+# headless skips Streamlit's first-run email prompt, which otherwise blocks startup.
+# Open http://localhost:8501 yourself after launching.
+headless = true
+# Largest file the Memes page accepts, in MB. Keep equal to MEME_MAX_UPLOAD_MB in config.py,
+# so the upload box states the same limit that saving enforces.
+maxUploadSize = 10
+# Listen on this computer only. Otherwise Streamlit also listens on the local network, and as no
+# page has a sign-in, anyone on the same Wi-Fi could delete gesture data or replace memes. The
+# camera only works on localhost anyway. Hosting would need a sign-in first (CONFLICTS N12 in
+# docs/implementation-plan).
+address = "localhost"
+
+[browser]
+gatherUsageStats = false

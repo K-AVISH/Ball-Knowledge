@@ -1,0 +1,24 @@
+# Exact versions the app was tested with (17 and 18 October 2026, Python 3.14).
+# Change a pin only on purpose, then run the tests, retrain on a scratch copy and check
+# the pages in the browser: the styling relies on Streamlit 1.65 and streamlit-webrtc 0.78.1
+# internals, and the saved model is a pickle made with these NumPy and scikit-learn versions.
+
+# Stage 1: dashboard and camera
+streamlit==1.65.0
+streamlit-webrtc==0.78.1  # ui.py styles this component's iframe; re-check after upgrading
+pillow==12.3.0            # ui.py shrinks meme images with it
+# One OpenCV only: mediapipe depends on opencv-contrib-python, and a second OpenCV
+# package (such as opencv-python-headless) would overwrite the same cv2 folder.
+opencv-contrib-python==5.0.0.93
+numpy==2.5.4
+pandas==3.0.6
+
+# Testing
+pytest==9.1.1
+
+# Stage 2: landmarks (also run: python download_models.py)
+mediapipe==1.1.0
+
+# Stage 4: model training
+scikit-learn==1.9.1
+joblib==1.6.0

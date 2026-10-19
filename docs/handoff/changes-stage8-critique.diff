@@ -1,0 +1,1864 @@
+diff -ruN -x __pycache__ -x .pytest_cache bk2-orig/01_PROJECT_CONTEXT.md bk2/01_PROJECT_CONTEXT.md
+--- bk2-orig/01_PROJECT_CONTEXT.md	2026-10-14 07:29:15.895641704 +0000
++++ bk2/01_PROJECT_CONTEXT.md	2026-10-14 07:49:35.823896927 +0000
+@@ -1,75 +1,93 @@
+-# Ball Knowledge Vision AI: project context (Stage 8 of 8)
++# Ball Knowledge Vision AI: project context (all 8 stages built)
+ 
+-Snapshot: 12 October 2026, status table updated 14 October 2026. Source of truth: `Context.md`, `Instructions.md`, `README.md` and `LAUNCH_CHECKLIST.md` in the project root. If this file and those disagree, the conflict is logged in section 6.
++Snapshot: 14 October 2026, after Stage 8 and six critique rounds on the finished app. Sources of truth, in order: the code, `README.md`, then the original brief in `Context.md` and `Instructions.md`, then `LAUNCH_CHECKLIST.md`. Where this file and the brief disagree, the conflict is listed in section 7.
+ 
+-**Note on the uploaded files.** The four uploads (frontend context, requirements checklist, critique prompt and handoff) describe Prognos, an EV fault-detection dashboard. They are not about this project. This folder reuses only their structure: context, checklist, build and critique prompt, and handoff. None of their content applies here.
++**About the structure.** These four files (context, build and critique prompt, checklist, handoff) copy the structure of four uploaded handoff files that were about a different project (Prognos, an EV fault-detection dashboard). Only the structure was reused. None of their content applies here.
+ 
+ ## 1. What the project is
+ 
+-A local, webcam-driven dashboard. The user performs a gesture, a classifier trained on the user's own recordings recognises it, and the matching meme, its Ball Knowledge rating and a description appear. The build is local-first: no paid APIs and no cloud services.
++A local webcam dashboard. You show a hand gesture; a classifier trained on your own recordings recognises it; the dashboard shows the matching meme with its Ball Knowledge rating and description. Everything runs on your Mac: no paid APIs, no cloud services, no accounts.
+ 
+-The user is the developer and the only operator. They record the samples, train the model and add the memes.
++You are the developer and the only user. You record or import the samples, train the model, and set the memes.
+ 
+ ## 2. Status by stage
+ 
+-| Stage | Scope | Code | Tests | Verified on real hardware or data |
++"Verified" says what was actually run. "Stand-in camera" means real clips or real recorded samples fed through the real code with the webcam simulated.
++
++| Stage | Scope | Main files | Tests | Verified |
+ |---|---|---|---|---|
+-| 1 | Dashboard and webcam | `app.py`, `ui.py`, `views/dashboard.py`, camera widget | Style and camera rule tests | No, needs a Mac camera |
+-| 2 | MediaPipe landmarks | `vision.py`, `download_models.py`; models in `models/mediapipe/` | `test_vision.py`, `test_landmark_hook.py` | No |
+-| 3 | Data collector | `views/collector.py`, `data_collector.py`, `features.py` | `test_data_collector.py`, `test_features.py` | No, `data/` has no samples yet |
+-| 4 | Training and evaluation | `train_model.py`, `gd_model.py`, `views/performance.py` | `test_train_model.py`, `test_gd_model.py`, `test_status.py` | Yes, on 16 real recordings (380 samples, 5 gestures including `none`), 14 October 2026. first_meme still has only 2 recordings |
+-| 5 | Live recognition | `predictor.py`, wired into `vision.py` and `views/dashboard.py` | `test_predictor.py`, `test_status.py` | Stand-in camera playing the real clips (13 October 2026). Not on a real webcam yet |
+-| 6 | Metadata manager and meme display | `dataset_manager.py`, `assets/memes/memes.json`, meme panel in `ui.py` | `test_memes.py` | Stand-in camera only (meme_3 and meme_4 checked 14 October 2026). Titles, ratings and descriptions not set yet |
+-| 7 | Smoothing, history and statistics | `predictor.py` (`steady`, `DetectionLog`), `ui.py` (recognition, history, tiles), `views/dashboard.py` | `test_predictor.py`, `test_status.py` | Stand-in camera playing the real clips (13 October 2026) |
+-| 8 | End-to-end testing | `check_pipeline.py`; browser run on a scratch dataset; fixes in `views/dashboard.py` and `requirements.txt` | `test_check_pipeline.py`, `test_predictor.py` | Clips and stand-in camera, 14 October 2026: no wrong gesture in 16 held-out clips. Your webcam run is still to do |
++| 1 | Dashboard and webcam | `app.py`, `ui.py`, `views/dashboard.py` | `test_style_rules.py` | Browser run with a stand-in camera (13 and 14 October). Not on your webcam |
++| 2 | Hand landmarks | `vision.py`, `features.py`, `download_models.py` | `test_vision.py`, `test_landmark_hook.py`, `test_features.py` | MediaPipe on all 16 real clips (`import_videos.py`, `check_pipeline.py`) |
++| 3 | Data collection | `views/collector.py`, `data_collector.py`, `import_videos.py` | `test_data_collector.py`, `test_import_videos.py` | 16 real clips imported (380 samples). One clip recorded through the Data collector page in the browser matched its imported samples (median distance 0.15, against 0.50 to other recordings) |
++| 4 | Training and evaluation | `train_model.py`, `gd_model.py`, `views/performance.py` | `test_train_model.py`, `test_gd_model.py`, `test_status.py` | Trained on the real data: 97.4% held-out accuracy, macro F1 0.973. Reproduced exactly on a second machine on 14 October |
++| 5 | Live recognition | `predictor.py` (`Predictor`, `LiveRecognizer`) | `test_predictor.py` | Stand-in camera with the real clips |
++| 6 | Memes | `dataset_manager.py`, `views/memes.py`, `assets/memes/` | `test_memes.py`, `test_display.py` | Meme panel with a stand-in camera. The Memes page (added 14 October) has not run in real Streamlit |
++| 7 | Smoothing, history, statistics | `predictor.py` (`steady`, `DetectionLog`), `views/dashboard.py` | `test_predictor.py`, `test_status.py` | Stand-in camera with the real clips |
++| 8 | End-to-end testing | `check_pipeline.py` | `test_check_pipeline.py` | All 16 clips replayed, each by a model that never saw it: no wrong gesture shown in any clip. Your webcam run is still to do |
+ 
+-Optional pages in `Instructions.md` (Dataset Manager and Prediction History) are not built.
++Tests: 284 passed on the Mac before the critique rounds. The rounds took the suite from 284 to 312 test cases (24 in the new `tests/test_display.py`, the rest from the style tests now also checking the new page and the critique log); in the review environment 307 passed and 5 could not run there (4 Streamlit AppTest tests, 1 `capsys` test).
+ 
+ ## 3. How recognition must behave
+ 
+-These rules come from `Context.md` section 3 and `Instructions.md` sections 2 and 6. They govern Stage 5 onwards.
++From `Context.md` section 3 and `Instructions.md` sections 2 and 6. These are built; keep them true.
+ 
+-1. No hand in view means no prediction. Show a clear "No hand detected" state.
+-2. A prediction below the configured confidence threshold (`DEFAULT_CONFIDENCE_THRESHOLD`, currently 0.70) is shown as "Unrecognised", never as a guess.
+-3. A gesture must win a voting window (`SMOOTHING_WINDOW` = 7 frames) and remain stable (`MIN_STABLE_FRAMES` = 4) before it changes the main result.
+-4. A meme is shown only for a recognised, stable gesture. Never show a random or unrelated meme.
+-5. The Ball Knowledge rating and description come from metadata. The vision model did not discover them. Say so in the UI.
+-6. Recent detections record meaningful changes in the result, not every frame.
+-7. Camera disconnection, missing models, invalid metadata and missing images are handled with visible messages, never silent failures.
++1. No hand in view means no prediction: "No hand detected".
++2. A score below `DEFAULT_CONFIDENCE_THRESHOLD` (0.70) is "Unrecognised", never a guess.
++3. A gesture becomes the result only after winning `MIN_STABLE_FRAMES` (4) of the last `SMOOTHING_WINDOW` (7) classified frames. Until then the panel says "Checking".
++4. The `none` class (a hand, but no gesture) shows "No gesture" and never a meme.
++5. A meme is shown only for the steady result, and only if its image is readable. Never a random or fallback meme.
++6. The rating and description come from `assets/memes/memes.json`, written by you. The model does not produce them, and the panel says so.
++7. Recent detections add one row per change of steady gesture, or the same gesture after a 2 second gap. Memory only, never saved.
++8. Camera loss, missing or mismatched model files, an unreadable `memes.json` and missing images each show a visible message.
++9. Confidence is the model's own estimate, not a calibrated probability. The cutoff table on the Model performance page is the evidence for the threshold.
+ 
+ ## 4. Data and privacy rules
+ 
+-- `data/samples.csv` holds landmark feature numbers, one row per frame. Columns: `session_id`, `label`, `person`, `timestamp`, then the feature columns `f000` onward. The feature length comes from `features.feature_length(mode)`.
+-- Only landmark numbers are stored. No images or video. `LAUNCH_CHECKLIST.md` and the privacy page both say so, and the code matches.
+-- `data/dataset_meta.json` records the feature mode the samples were collected with. Mixing modes is an error.
+-- Training splits by whole recording, so frames from one recording never appear in two sets. The split is repeatable for a fixed seed (`TRAIN_SEED` = 42).
+-- Each gesture needs at least 3 separate recordings to train (`MIN_SESSIONS_FOR_TRAINING`). Aim for 100 to 300 samples per gesture.
+-- A saved model is marked stale when the dataset row count or the feature mode changes. The dashboard and the performance page both show this.
+-
+-## 5. Dashboard information contract
+-
+-Right-hand column order from the brief: current prediction, meme, live statistics, recent detections. Left column: camera, with its status and hand tags below the video.
+-
+-| Area | Shown to the user | Status |
+-|---|---|---|
+-| Camera | Status (off, connecting, connected), hand detection, landmark overlay toggle, Start and Stop | Built |
+-| Recognition | Steady gesture, confidence, Unrecognised, Checking and No gesture states, top scores | Built (Stages 5 and 7) |
+-| Meme result | Image, title, gesture label, rating, description | Built (Stage 6) |
+-| Live statistics | FPS, latency, number of classes, model state. Also total recognised and latest gesture | Built |
+-| Recent detections | Time, label, confidence | Built (memory only, per browser session) |
+-| Model performance | Test metrics, per-gesture table, confusion matrix, confidence cutoffs, data split, validation comparison | Built, from `training_report.json` |
+-
+-## 6. Conflicts and assumptions
+-
+-1. **Dashboard technology.** `Instructions.md` says "Figma for the web dashboard". `Context.md` specifies Streamlit, and the build uses Streamlit. Assumption: Streamlit.
+-2. **Startup model loading.** `Instructions.md` asks for the saved model to load at startup. Resolved in Stage 5: the dashboard loads the model once (`ui.load_predictor`) and reloads it only when the files change.
+-3. **Per-gesture confidence threshold.** `Context.md` lists `confidence_threshold` in each metadata record. The current code has one global default. Per-gesture thresholds are a Stage 6 decision.
+-4. **Gesture count.** `Context.md` suggests 5 to 10 gestures. The app trains with 2 or more. Assumption: the suggestion, not a hard limit.
+-5. **Optional pages.** The dataset manager and prediction history pages are optional in `Context.md`. Not built.
+-6. **Video upload.** Resolved 13 October 2026: `import_videos.py` turns local video files into samples through the live pipeline (see `README.md`, Import recorded videos).
+-
+-## 7. Stack and environment
+-
+-- Python 3. The venv in the project folder was created on macOS with Python 3.14 and is not portable. Recreate it on the Mac with the commands in `04_HANDOFF.md`.
+-- Streamlit (dark theme set in `.streamlit/config.toml`), streamlit-webrtc 0.78.1, OpenCV (opencv-contrib-python, the one MediaPipe installs), MediaPipe, NumPy, pandas, scikit-learn, joblib, pytest.
+-- Design rules, enforced by `tests/test_style_rules.py`: no emoji, no em dashes, no gradients, no animation, no pill shapes, no purple, no "made with" badges, a real favicon, and privacy and terms pages in the navigation. Corner radii are limited to 2, 4, 6 and 8 pixels, or 50%.
++- `data/samples.csv`: one row per frame. Columns `session_id`, `label`, `person`, `timestamp`, then features `f000` onward (126 in `hands` mode).
++- Only landmark numbers are stored. No frames, images or video from the camera or from imported clips.
++- Meme images you choose are copied into `assets/memes/` on your Mac and go nowhere else.
++- `data/dataset_meta.json` records the feature mode. Mixing modes is an error.
++- Evaluation holds out whole recordings (leave one recording out), so no frame of a recording trains the model that tests it.
++- A gesture needs 2 recordings to train and 3 for steadier numbers. Aim for 100 to 300 samples per gesture.
++- The saved model is marked stale when the dataset's row count or the feature mode changes.
++- The camera connection uses no STUN or TURN server (`ui.py` sets an empty list). The privacy page says so, corrected on 14 October.
++
++## 5. Current data and model
++
++| Gesture | Name shown | Recordings | Samples | Held-out F1 |
++|---|---|---|---|---|
++| first_meme | First meme | 2 | 58 | 0.949 |
++| meme_3 | Meme 3 | 3 | 48 | 1.000 |
++| meme_4 | Meme 4 | 4 | 127 | 0.988 |
++| none | No gesture | 4 | 119 | 0.961 |
++| second_meme | Second meme | 3 | 28 | 0.966 |
++
++Model: softmax regression by gradient descent, l2 0.01, trained 14 October 2026 11:55. Held-out accuracy 97.4%, cost 0.1056. At the 70% cutoff 92% of predictions are accepted and 98.6% of those are right. Main mistakes: `none` read as first_meme (4) or second_meme (2). All clips were filmed in one room on one day, so treat these as a rough guide.
++
++Meme titles, ratings and descriptions are empty for all four gestures.
++
++## 6. Pages
++
++| Page | What it shows |
++|---|---|
++| Live dashboard | Camera with status and hand tags; Recognition (steady gesture, confidence bar against the threshold, top scores); Meme result; below them Live statistics (latest gesture, recognised this session, gesture classes, FPS, latency, model) and Recent detections |
++| Data collector | Camera, record a gesture (one Start/Stop recording button), dataset status per gesture with a legend, undo and delete |
++| Model performance | Train button, held-out accuracy, cost, macro F1, per-gesture table, confusion matrix, mix-ups, confidence cutoffs, each recording held out (named by when it started), cost function details |
++| Memes | What is set per gesture, a form for name, title, rating, description and image, and a live preview of the dashboard's meme panel |
++| Privacy policy, Terms | Legal pages; warn until your name and contact email are set in `config.py` |
++
++A gesture's name from the Memes page is used on every page.
++
++## 7. Conflicts and assumptions
++
++1. **Dashboard technology.** `Instructions.md` says "Figma for the web dashboard"; `Context.md` says Streamlit, and the app is Streamlit. Still undecided by you; assumed Streamlit.
++2. **Per-gesture threshold.** `Context.md` lists a `confidence_threshold` per metadata record. The app uses one global threshold. Not built.
++3. **Optional pages.** `Context.md` lists a Dataset Manager page and a Prediction History page as optional. The Memes page covers the meme part of the Dataset Manager. Prediction History is not built (recent detections are on the dashboard).
++4. **Classifier.** The brief suggests a Random Forest baseline. The project switched to softmax regression by gradient descent on 13 October; gradient boosting and forests were measured and had a higher held-out cost.
++5. **Video upload.** Decided 13 October: `import_videos.py` turns local video files into samples through the live pipeline.
++
++## 8. Stack
++
++Python 3 on macOS. Streamlit (dark theme in `.streamlit/config.toml`), streamlit-webrtc 0.78.1, opencv-contrib-python (the OpenCV that MediaPipe needs; only one OpenCV package), MediaPipe, NumPy, pandas, scikit-learn, joblib, Pillow (installed with Streamlit), pytest.
++
++Design rules enforced by `tests/test_style_rules.py`: no emoji, no em dashes, no gradients, no animation, no pill shapes, no purple, no "made with" badges, a real favicon, legal pages in the navigation, corner radii of 2, 4, 6 or 8 pixels or 50%, one camera button and one record button.
+diff -ruN -x __pycache__ -x .pytest_cache bk2-orig/02_BUILD_AND_CRITIQUE_PROMPT.md bk2/02_BUILD_AND_CRITIQUE_PROMPT.md
+--- bk2-orig/02_BUILD_AND_CRITIQUE_PROMPT.md	2026-10-14 07:29:15.896048621 +0000
++++ bk2/02_BUILD_AND_CRITIQUE_PROMPT.md	2026-10-14 07:49:35.818542336 +0000
+@@ -1,61 +1,126 @@
+-# Build and critique prompt: Ball Knowledge Vision AI, Stage 5 onwards
++# Build and critique prompt: Ball Knowledge Vision AI, after Stage 8
+ 
+-Use this with `01_PROJECT_CONTEXT.md`, `03_REQUIREMENTS_AND_CHECKLIST.md` and `04_HANDOFF.md`. Read all three before changing code.
++Give this file to the AI together with `01_PROJECT_CONTEXT.md`, `03_REQUIREMENTS_AND_CHECKLIST.md` and `04_HANDOFF.md`. Run it in Claude Code (or another coding agent) on the Mac, from the project folder `/Users/kavishseema/Desktop/Passion Project`.
++
++---
+ 
+ ## Your role
+ 
+-You are the engineer for this project. Build the next unfinished stage, then critique the site and improve it. Do not stop at a plan.
++You are the engineer on this project. All eight stages are built. Your job is to verify the app on this Mac, fix what fails, then critique the site and improve it in six rounds. Do the work; do not stop at a plan. Work through the parts below in order and finish each before starting the next.
++
++Read `01_PROJECT_CONTEXT.md`, `03_REQUIREMENTS_AND_CHECKLIST.md` and `04_HANDOFF.md` first. Then read `README.md` and `docs/ui-critique-log.md`.
+ 
+ ## Ground rules
+ 
+-1. **Do not claim a model is trained, accurate or working** unless a real training run on real recordings has finished and produced the report. Synthetic data proves the code, not the gestures. Say which one a result is.
+-2. **Do not invent numbers.** Every figure on screen must come from the training report, the dataset or the camera. Show "n/a" or a dash when there is no value. Never show 0% or 100% as a stand-in.
+-3. **Do not add features outside the brief.** Stage 5 is live recognition. Stage 6 is the metadata manager and meme display. Stage 7 is smoothing, history and statistics. Stage 8 is end-to-end testing. Build in that order.
+-4. **Keep the design rules.** Run `tests/test_style_rules.py` after every change. Never loosen a test to make code pass.
+-5. **Keep camera, ML, data and UI separate** (`vision.py`, `train_model.py`, `dataset_manager` or equivalent, `views/`). The UI reads results. It does not compute them.
+-6. **Preserve the privacy promise.** Store landmark numbers only. Never store frames, images or video. If that changes, update `views/privacy.py` and `views/terms.py` in the same change.
+-7. **Do not retrain during live recognition.** Load the saved model once.
+-
+-## Stage 5: live recognition (next)
+-
+-Implement, in `predictor.py`:
+-
+-- Load `models/gesture_model.joblib` and `models/label_mapping.json` once, with clear errors if either is missing or does not match the feature mode.
+-- Build the same feature vector the collector used (`features.py`), so training and prediction match.
+-- Apply the confidence threshold and report "Unrecognised" below it.
+-- Return the top predictions for the recognition panel.
+-
+-Connect it to `views/dashboard.py` and `vision.py`. Keep the camera loop responsive. Do not block the video thread on model inference if it is slow.
+-
+-## Critique loop (repeat for each stage)
+-
+-Use this rubric. The same weights are in the "Rubric" section of `docs/ui-critique-log.md`.
+-
+-1. **Data truth (25%).** Are all numbers measured, labelled and sourced? Is the model called "uncalibrated" and "estimated" where that applies?
+-2. **Recognition and data state (20%).** Do stale, missing, unrecognised and not-trained states each show distinctly?
+-3. **Flow and action clarity (15%).** Can a new user see what to do next?
+-4. **Visual hierarchy and brand (15%).** Is the most important information first, and is it consistent?
+-5. **Interaction reliability (10%).** Do Start, Stop, Record and Train behave, and recover from errors?
+-6. **Accessibility and responsive (10%).** Headings, captions, focus, keyboard, and no horizontal overflow at 390px.
+-7. **Maintainability (5%).** Shared logic in one place, tests for it, docs updated.
+-
+-For each round, write the critique with evidence (file, line or render), make the fixes, run the tests, render the pages, and record the scores in `docs/ui-critique-log.md`. Report the defects you could not verify.
+-
+-## Verification you must run
+-
+-- Full test suite, from the project root with the venv active: `python -m pytest -q`. Report pass and fail counts. Quote each failure.
+-- Render check: run `streamlit run app.py` and open each page at 1280px and 390px. Note any horizontal scrolling.
+-- Camera check (manual, on the Mac): start the camera, confirm the landmarks appear, and confirm "Camera connected" shows.
+-- Recording check (manual): record one gesture, confirm the count rises and the file grows.
+-- Training check (manual): train on real recordings, confirm the report and confusion matrix appear.
++1. **Never claim something works unless you ran it.** For every result, say how it was checked: automated test, browser run, the user's webcam, or not run.
++2. **Never invent numbers.** Every figure on screen comes from the camera, `data/samples.csv` or `models/training_report.json`. Show "n/a" when there is none. Never fill in a meme title, rating or description; those belong to the user.
++3. **Never loosen or delete a test to make code pass.** If a test is wrong, say why and ask the user.
++4. **Keep the design rules** in `tests/test_style_rules.py`: no emoji, no em dashes, no gradients, no animation, no pill shapes, no purple, small corner radii, one camera button, one record button.
++5. **Keep responsibilities separate**: camera in `vision.py`, model in `predictor.py` and `train_model.py`, data in `data_collector.py`, memes in `dataset_manager.py`, display in `ui.py` and `views/`. Pages read results; they do not compute them.
++6. **Keep the privacy promise.** Store landmark numbers only, never frames, images or video from the camera. If anything about data handling changes, update `views/privacy.py` and `LEGAL_LAST_UPDATED` in `config.py` in the same change.
++7. **Do not touch the user's data without asking**: `data/`, `models/`, `assets/memes/`, and the gesture folders (`First meme`, `Second meme`, `Meme 3`, `Meme 4`, `None`). For experiments, set `BALLKNOWLEDGE_DATA_DIR` and `BALLKNOWLEDGE_MODEL_DIR` to a scratch folder.
++8. **Do not add features outside the brief** (`Context.md`, `Instructions.md`). Optional extras from the brief need the user's yes first.
++
++## Part 1: automated checks
++
++Run from the project folder:
++
++```bash
++source .venv/bin/activate
++python -m pytest -q
++```
++
++Expected: 312 passed and nothing failed. Five of these (4 legal page tests using Streamlit's AppTest and 1 `capsys` test) have only ever run on this Mac, not in the review environment.
++
++If anything fails: quote the failure, find the cause, fix the code (not the test), and run the full suite again. Record the final counts.
++
++Then run the clip replay:
++
++```bash
++python check_pipeline.py "First meme" "Second meme" "Meme 3" "Meme 4" None
++```
++
++Expected: "A wrong gesture was shown in 0 of 16 clips" (the duplicate copy in First meme is checked once), and per-gesture results close to the table in `04_HANDOFF.md`. If any clip shows a wrong gesture, stop Part 1 and report the clip, the gesture shown and how long it was shown.
++
++## Part 2: run the app and check every page
++
++Start the app and open it in a browser:
++
++```bash
++streamlit run app.py
++```
++
++Open http://localhost:8501. Check each page at a desktop width (about 1280px) and at a phone width (390px):
++
++| Page | Pass when |
++|---|---|
++| Live dashboard | No red error box. Camera card, Recognition, Meme result, then a row with Live statistics and Recent detections. A blue notice names the gestures without a rating or description |
++| Data collector | Dataset list shows 5 gestures with the combined hints (first_meme: "Needs 42 more samples and 1 more separate recording") and the bar legend |
++| Model performance | Held-out accuracy 97.4%. Gesture names match the dashboard ("Meme 3", "No gesture"). Recordings named by time, for example "14 Oct 11:35 (c79027)" |
++| Memes | The table, the form and the preview panel. Nothing is saved until Save meme is pressed |
++| Privacy policy | No mention of a Google STUN server. A "Meme images" section |
++
++At 390px no page may scroll sideways. Tables may scroll inside their own box. Check the browser console for errors and list any you find.
++
++**Memes page in real Streamlit** (this has never been run): use a scratch copy so the user's memes are not changed. Copy the project to a scratch folder, run `streamlit run app.py --server.port 8502` from that copy, and check:
++
++1. Save a title, a rating of "8/10" and a description for one gesture. Expect a green "Saved" message, Set in the table, and the preview showing them. `assets/memes/memes.json` in the scratch copy contains them.
++2. Upload a PNG. Expect it in the preview and copied to `assets/memes/<gesture>.png`.
++3. Upload a text file renamed to `.png`. Expect a red "Nothing was saved" message naming the file, and no change to `memes.json`.
++4. Type text in one gesture's form without saving, switch to another gesture. The other gesture's form must not show that text.
++5. Open the Live dashboard in the scratch copy: the notice no longer lists the gesture you completed.
++
++Fix anything that fails and add a test for it where it can be tested without a browser.
++
++## Part 3: the user's webcam run
++
++Only the user can do this, because it needs a person in front of the camera. Ask the user to do the nine steps in `README.md`, "Test the whole pipeline", "With your webcam", and to tell you, for each step, pass or what happened instead. Record the answers in `03_REQUIREMENTS_AND_CHECKLIST.md`.
++
++If a gesture often stays on Unrecognised live, the fix is more data, not a lower threshold: ask the user to record one or two recordings of it on the Data collector page, then train again on the Model performance page. Do not change `DEFAULT_CONFIDENCE_THRESHOLD` without showing the user the cutoff table and getting a yes.
++
++## Part 4: six critique-and-improve rounds
++
++Do six rounds. In each round:
++
++1. **Critique.** Look at the running app (all pages, desktop and 390px, and the dashboard states you can reach: camera off, no hand, checking, unrecognised, no gesture, recognised). List defects with evidence: page, state, what you saw, and the file and line responsible.
++2. **Fix** the most important defects first. Keep changes small and in the right module.
++3. **Test.** Run `python -m pytest -q`. Add a test for each fix that can be tested without a browser.
++4. **Look again** at the pages you changed, at both widths.
++5. **Score** with the rubric below and add a section for the round to `docs/ui-critique-log.md`: defects, fixes, evidence, scores.
++
++Rubric (weights add to 100%):
++
++| Dimension | Weight | Question |
++|---|---|---|
++| Data truth | 25% | Is every number measured, labelled and sourced, and every statement on the site true? |
++| Recognition and data state | 20% | Does each state show distinctly and the same way on every page? |
++| Flow and action clarity | 15% | Can the user see what to do next without the terminal? |
++| Visual hierarchy and brand | 15% | Is the result (gesture and meme) first and the layout balanced, dark and football-like? |
++| Interaction reliability | 10% | Do Start, Stop, Record, Train and Save behave, and recover from errors? |
++| Accessibility and responsive | 10% | Headings in order, captions, contrast at least 4.5:1, keyboard focus visible, no sideways scroll at 390px |
++| Maintainability | 5% | Shared logic in one place, tests, docs updated |
++
++Weighted score = the sum of each score times its weight. The release gate is a weighted score of at least 9.0 with every dimension at least 8.5. Do not raise a score without evidence from that round. If the gate is not met after six rounds, say which dimensions are short and why.
++
++Start from the open defects in `docs/ui-critique-log.md` ("Unresolved") and section I of `03_REQUIREMENTS_AND_CHECKLIST.md`. A keyboard-only pass (Tab through each page; every control reachable and its focus visible) counts as evidence for Accessibility.
++
++## Part 5: wrap up
++
++1. Run `python -m pytest -q` one last time and record the counts.
++2. Update `03_REQUIREMENTS_AND_CHECKLIST.md`: tick only what you verified in this session, and say how.
++3. Update `04_HANDOFF.md`: what changed, how to run it, test counts, what is still open. Replace outdated sections instead of adding dated updates on top.
++4. Update `01_PROJECT_CONTEXT.md` section 2 if a stage's verification changed.
++5. Update `README.md` for anything a user would do differently.
++6. Before changing files, save copies of the originals in `docs/handoff/snapshots/<short-name>/`.
+ 
+ ## What not to do
+ 
+-- Do not present a validation or synthetic result as a test result.
+-- Do not hard-code a gesture name, a meme, or a rating.
+-- Do not use em dashes or emoji in code or UI text.
+-- Do not add a second camera control, a second record button, or a hidden fallback that shows fake results when the camera fails.
++- Do not present a held-out, synthetic or stand-in camera result as a webcam result.
++- Do not hard-code a gesture name, meme, rating or description.
++- Do not add a second camera control, a second record button, or a fallback that shows a meme when recognition fails.
++- Do not delete or overwrite the user's recordings, model or memes.
++- Do not use em dashes or emoji in code, UI text or docs.
+ 
+-## Output
++## Report back to the user
+ 
+-Update `docs/ui-critique-log.md` (one section per round), `docs/handoff/03_REQUIREMENTS_AND_CHECKLIST.md` (tick only what you verified) and `docs/handoff/04_HANDOFF.md` (what changed, how to run it, what is still open).
++End with a short report: test counts, what you ran and how, what changed (by file), the final round scores, and what still needs the user (webcam steps, memes to write, recordings to add).
+diff -ruN -x __pycache__ -x .pytest_cache bk2-orig/03_REQUIREMENTS_AND_CHECKLIST.md bk2/03_REQUIREMENTS_AND_CHECKLIST.md
+--- bk2-orig/03_REQUIREMENTS_AND_CHECKLIST.md	2026-10-14 07:29:15.896080936 +0000
++++ bk2/03_REQUIREMENTS_AND_CHECKLIST.md	2026-10-14 07:49:35.818847240 +0000
+@@ -1,118 +1,124 @@
+-# Requirements and checklist: Ball Knowledge Vision AI
++# Requirements and checklist: Ball Knowledge Vision AI (all 8 stages built)
+ 
+-Status key: **[x]** built and covered by a test or a render. **[~]** built, but not verified on a real camera or real recordings. **[ ]** not built.
++Updated 14 October 2026, after Stage 8 and six critique rounds.
+ 
+-Sources: `Context.md` (Sections 1 to 10), `Instructions.md` (Sections 1 to 10) and `LAUNCH_CHECKLIST.md`.
++Status key:
++
++- **[x]** built and verified by an automated test, a browser run, or a run on your real data. The line says which.
++- **[~]** built, but not yet verified on your webcam or in real Streamlit.
++- **[ ]** not built or not done.
++
++Sources: `Context.md` and `Instructions.md` (sections 1 to 10), `LAUNCH_CHECKLIST.md`.
+ 
+ ## A. Live camera (Instructions 2, Context 6A)
+ 
+-- [~] Start and Stop camera, one toggle button, camera permission requested by the browser.
+-- [~] Hand landmarks detected and drawn on the video when the overlay is on.
+-- [~] Camera status: connected, connecting, off, missing model or processing error.
+-- [~] Hand detection status: "1 hand detected", "No hand".
+-- [x] Camera resources released on stop (dashboard calls `processor.reset()` when the camera is off).
+-- [ ] Body pose landmarks (`hands+pose` mode). Supported by config and `download_models.py`, not exercised.
++- [~] Start and Stop camera with one toggle button; the browser asks for camera permission. Browser run with a stand-in camera; not on your webcam.
++- [x] Hand landmarks found by MediaPipe and drawn on the video when the overlay is on. MediaPipe ran on all 16 real clips.
++- [~] Camera status: off, connecting, connected, hand model missing, processing error.
++- [~] Hand status: "1 hand detected", "2 hands detected", "No hand".
++- [x] Camera resources released on stop (`processor.reset()` and `recognizer.reset()`); browser run showed Stop camera clearing every panel.
++- [ ] Body pose landmarks (`hands+pose` mode). Supported by config and `download_models.py`, not used.
+ 
+ ## B. Data collection (Instructions 3, Context 4)
+ 
+-- [x] Enter or pick a gesture name; name saved as a lowercase id.
+-- [x] Countdown, then recording at a fixed rate; progress bar; Stop recording saves what was collected.
++- [x] Enter or pick a gesture name; saved as a lowercase id.
++- [x] Countdown, recording at 10 samples a second, progress bar, one Start/Stop recording button. Browser run on 14 October saved 40 samples.
+ - [x] Frames with no hand are not saved.
+-- [x] Samples stored with label, recording session id, person and timestamp (`data/samples.csv`).
+-- [x] Samples per gesture and recordings per gesture shown, with a status per gesture.
+-- [x] Undo last recording; delete all samples of a gesture (with confirmation).
+-- [~] Real recordings collected. 14 October 2026: 16 imported clips, 380 samples: first_meme 2 recordings (58), second_meme 3 (28), meme_3 3 (48), meme_4 4 (127), none 4 (119). first_meme needs a third recording; first_meme, second_meme and meme_3 are under 100 samples.
+-- [x] Ingest video files into samples (`import_videos.py`, `tests/test_import_videos.py`). Same pipeline as the camera, duplicates skipped.
+-- [x] Imported and live samples match (Stage 8, 14 October 2026): the same clip recorded through the Data collector page in the browser gave samples at median distance 0.15 from its imported samples, against 0.50 to other recordings of the gesture.
++- [x] Each sample stored with label, recording id, person and timestamp.
++- [x] Samples and recordings per gesture shown, with a status. The hint names every shortfall ("Needs 42 more samples and 1 more separate recording"), and a legend explains the bars (`tests/test_display.py`).
++- [x] Undo last recording; delete a gesture's samples with confirmation.
++- [x] Import video files into samples (`import_videos.py`), same pipeline as the camera, duplicates skipped.
++- [x] Imported and live samples match (browser run, median distance 0.15 against 0.50 to other recordings).
++- [~] Enough real data. Now: first_meme 2 recordings (58 samples), meme_3 3 (48), meme_4 4 (127), none 4 (119), second_meme 3 (28). first_meme needs a third recording; first_meme, meme_3 and second_meme are under 100 samples; all filmed in one room on one day.
+ 
+ ## C. Training and evaluation (Instructions 3, Context 4)
+ 
+-- [x] Validates rows and reports dropped rows by reason.
+-- [x] Tests by recording (leave one recording out), so no frame of a recording trains the model that tests it.
+-- [x] Leakage check.
+-- [x] Softmax regression trained by gradient descent (`gd_model.py`), minimising cross-entropy plus an l2 penalty. The penalty is chosen by the lowest held-out cost. Matches scikit-learn's solver to 1e-5 (`tests/test_gd_model.py`). Replaced the random forests and SVM on 13 October 2026; gradient boosting was measured and had a higher held-out cost.
+-- [x] Held-out results: accuracy, cost, precision, recall, F1, confusion matrix, top confusions, confidence cutoffs, per-recording results. Slightly optimistic because the penalty is chosen on the same recordings; the report says so.
+-- [x] Saves model, label mapping and report. A failed run keeps the previous model.
+-- [x] Warns on thin or perfect results.
+-- [x] Shows staleness (dataset changed, feature mode changed).
+-- [x] Readiness line before training (per-gesture recording count).
+-- [~] Trained on real recordings and evaluated (14 October 2026): 380 samples, 16 recordings, 5 gestures including `none`, 97.4% held-out accuracy, macro F1 0.973, l2 0.01. Most mistakes are `none` read as first_meme (4) or second_meme (2). All held-out clips were filmed in one room on one day, so this is a rough guide.
+-- [x] Per-class report and per-recording results checked on real data in the browser.
++- [x] Validates rows and reports dropped rows.
++- [x] Leave one recording out, so no frame of a recording trains the model that tests it.
++- [x] Softmax regression by gradient descent (`gd_model.py`); penalty chosen by the lowest held-out cost; matches scikit-learn's solver (`tests/test_gd_model.py`).
++- [x] Accuracy, cost, precision, recall, F1, confusion matrix, mix-ups, confidence cutoffs, per-recording results.
++- [x] Recordings named by when they started on the performance page ("14 Oct 11:35 (c79027)").
++- [x] Saves model, label mapping and report together; a failed run keeps the old model.
++- [x] Warnings for thin, unequal or optimistic results. Staleness shown on the dashboard and performance page.
++- [x] Trained on your real data: 97.4% held-out accuracy, macro F1 0.973, l2 0.01. Reproduced exactly on a second machine on 14 October.
+ 
+ ## D. Recognition (Instructions 3 and 6, Context 3 and 7)
+ 
+-- [x] Load the saved model at startup.
++- [x] Saved model loaded once at startup and reloaded only when the files change.
+ - [x] Same feature vector as collection.
+-- [x] Confidence threshold, with an Unrecognised state.
+-- [x] Top alternative predictions.
+-- [x] Voting window and stable-frames requirement: the Recognition and meme panels both show only the steady gesture (`LiveRecognizer.steady`), with a Checking state while a gesture is being confirmed (`tests/test_predictor.py`, `tests/test_status.py`). Checked with the stand-in camera on 13 October 2026: a 0.6 s dropout kept the result on screen.
+-- [~] Recognition result and confidence shown live. Held-out replay of all 16 clips on 14 October 2026: right gesture in 59% to 87% of hand frames per gesture, wrong gesture in none; most of the rest is unsure or no hand in view. Checked again on 13 October 2026 in the browser with a stand-in camera playing frames from the clips: No hand, Unrecognised (56% while the hands moved in), Recognised for both gestures, meme shown after the steady vote and cleared when the hands left, Stop camera clears everything. Those clips are training data, so this checks the wiring, not accuracy. Not yet run on a real webcam.
+-- [x] Scores that round to 100% or 0% are shown as "over 99%" or "under 1%" (`ui.score_pct`, `tests/test_status.py`).
+-
+-## E. Meme dataset (Instructions 4, Context 5)
+-
+-- [x] Metadata file `assets/memes/memes.json` mapping each gesture to name, meme title, image path, Ball Knowledge rating and description (`dataset_manager.py`). Ratings, titles and descriptions are empty until the user sets them.
+-- [x] Images in `assets/memes/`, relative paths.
+-- [x] Add a gesture, assign an image, edit description and rating without changing code: `dataset_manager.py` or one image in the gesture folder plus `import_videos.py`. No dashboard page for it yet.
+-- [x] Missing or invalid image and metadata handled with a visible message (`tests/test_memes.py`).
+-- [~] Meme panel updates automatically from the steady recognised gesture. Checked with a stand-in camera, not a real webcam.
+-
+-## F. Open decisions for the user
+-
+-- [x] **Video upload.** Decided 13 October 2026: option (b). `import_videos.py` reads local video files, extracts landmarks with the live pipeline and writes samples. Videos are processed locally and never copied. The privacy page has an Imported videos section.
+-- [ ] Figma or Streamlit for the dashboard (assumed Streamlit).
+-- [ ] Per-gesture confidence threshold (Stage 6).
++- [x] Confidence threshold (70%) with an Unrecognised state.
++- [x] Top three scores.
++- [x] Steady vote: 4 of the last 7 frames, with a Checking state.
++- [x] `none` shows "No gesture" and no meme.
++- [x] Held-out replay of all 16 clips: no wrong gesture shown in any clip.
++- [~] Live recognition on your webcam (README, With your webcam, steps 1 to 6).
++
++## E. Memes (Instructions 4, Context 5)
++
++- [x] `assets/memes/memes.json` maps each gesture to name, title, image, rating and description (`dataset_manager.py`).
++- [x] Images in `assets/memes/` with relative paths; missing or unreadable images and an unreadable `memes.json` show a message (`tests/test_memes.py`).
++- [x] Add a gesture, set its image, change its rating and description without touching code: the Memes page, `dataset_manager.py`, or an image in the gesture folder with `import_videos.py`.
++- [x] Memes page saving checked by tests: text, upload, bad upload saves nothing, text over the limit saves nothing, uploads over 10 MB refused (`tests/test_display.py`).
++- [~] Memes page in real Streamlit (prompt Part 2, steps 1 to 5).
++- [x] One name per gesture on every page, from the Memes page (`dataset_manager.display_name`).
++- [x] Large images shrunk for display only, so the twice-a-second refresh stays light (`tests/test_display.py`).
++- [~] Meme panel updates by itself from the steady gesture. Stand-in camera only.
++- [ ] Titles, ratings and descriptions written. All four are empty. This is yours to do.
++
++## F. Decisions for you
++
++- [x] Video import: decided 13 October (`import_videos.py`).
++- [ ] Figma or Streamlit for the dashboard. Built in Streamlit.
++- [ ] Per-gesture confidence threshold. Not built; one global threshold.
++- [ ] Prediction History page (optional in the brief). Not built.
+ 
+ ## G. Dashboard (Instructions 5, Context 6)
+ 
+-- [x] Dark theme, football-inspired halfway-line mark, consistent cards.
+-- [x] Live statistics: FPS, latency, number of classes, model state. FPS fixed 13 October 2026: it averaged 1/gap per frame, which overstated uneven WebRTC delivery (24 shown for a 15 fps stream). It now averages the gaps and matches the browser's own count (`tests/test_vision.py`).
+-- [x] Live statistics: recognised this session and latest gesture with its time (Stage 7). Checked with the stand-in camera on 13 October 2026.
+-- [x] Right-hand order: recognition, meme, statistics, recent detections.
+-- [x] Progress strip: no longer on the dashboard (checked 14 October 2026). The Model tile and the Recognition panel show the model and recognition state.
+-- [~] Responsive at 1280px and 390px in a stand-in render. Not checked in a live Streamlit session.
+-- [x] Recent detections, with time, label and confidence, newest first (`predictor.DetectionLog`). One entry per change of steady gesture, or the same gesture after a pause over 2 s; holding a gesture or a short dropout adds nothing. Memory only, per browser session; the privacy page says so. Checked with the stand-in camera on 13 October 2026.
+-
+-## H. Additional pages (Context 6, optional)
+-
+-- [ ] Dataset Manager page (optional, Context 6).
+-- [~] Model Performance page: built and covered by the report contract. Verified with synthetic data only.
+-- [ ] Prediction History page (optional, Context 6).
++- [x] Dark theme, football styling, consistent cards.
++- [x] Recognition and Meme result beside the camera; Live statistics and Recent detections in a row below (renders at 1280px and 390px).
++- [x] Live statistics: latest gesture with its time, recognised this session, gesture classes, FPS, latency, model state.
++- [x] Recent detections: time, gesture, confidence, newest first, one row per change, memory only.
++- [x] Notice naming gestures without a rating or description, pointing to the Memes page.
++- [~] Responsive at 1280px and 390px in renders; not yet checked in a live Streamlit session.
++
++## H. Pages (Context 6)
++
++- [x] Live dashboard, Data collector, Model performance (real data).
++- [x] Memes (new, 14 October). Renders checked; real Streamlit run pending.
++- [x] Privacy policy and Terms. The privacy page's network section was wrong (it named a Google STUN server that the app does not use); corrected 14 October.
+ 
+ ## I. Quality and accessibility
+ 
+-- [x] Headings: page title, then section titles, in order.
+-- [x] Table captions, column and row header scope, confusion-matrix text legend.
+-- [x] Keyboard focus outline; wide tables scroll inside a labelled, focusable region.
+-- [x] Status region for camera changes; recording progress not announced repeatedly.
+-- [~] Keyboard and screen-reader pass in a live browser.
+-- [~] Contrast checked by eye against the palette, not measured with a tool.
++- [x] Headings in order; table captions; row and column header scope; confusion matrix legend in words.
++- [x] Contrast measured: text 16.1:1, muted text at least 5.9:1, tags at least 5.0:1, matrix numbers at least 4.66:1 after capping the shading (`tests/test_display.py`).
++- [x] No sideways scroll at 390px on any page or dashboard state in renders.
++- [~] Keyboard-only pass in a real browser.
++- [ ] Screen-reader announcement of a new result. Not built: an ARIA live region would re-read the panel every 0.5 seconds.
+ 
+ ## J. Testing (Instructions 9, Context 10)
+ 
+-- [x] Test suite exists: style rules, features, vision, landmark hook, data collector, training, status.
+-- [x] Full suite passes on the Mac (`python -m pytest -q`): 284 passed on 14 October 2026, also in two fresh venvs built from `requirements.txt`.
+-- [x] Stage 8 without a webcam (14 October 2026): `check_pipeline.py` replayed all 16 recordings through the live path, each with a model that never saw it: no wrong gesture shown in any clip. Browser run on a scratch dataset: record, train, recognise, stop, undo and retrain-needed all worked (`04_HANDOFF.md`).
+-- [x] Fresh install: `requirements.txt` installs one OpenCV package (`opencv-contrib-python`, the one MediaPipe needs) and passes the suite.
+-- [ ] Stage 8 with your webcam: the six steps in README, Test the whole pipeline.
++- [x] Automated suite: 307 passed in the review environment; 5 could only run on the Mac (4 AppTest, 1 capsys). 284 passed on the Mac before this session.
++- [x] Clip replay through the live path (`check_pipeline.py`): 0 wrong gestures in 16 clips.
++- [x] Browser run on a scratch dataset: record, train, recognise, stop, undo, retrain-needed.
++- [ ] Full suite on the Mac after this session's changes (prompt Part 1).
++- [ ] Your webcam run (README, steps 1 to 9).
+ 
+ ## K. Launch (LAUNCH_CHECKLIST.md)
+ 
+ - [x] Favicon present and used.
+ - [x] No attribution badges; Streamlit footer and Deploy button hidden.
+-- [~] Privacy and terms pages drafted; need operator name, contact email and legal review.
+-- [ ] Custom domain and HTTPS (browsers need HTTPS for camera access outside localhost).
+-- [ ] Re-test the camera on the final domain in Chrome and Safari.
+-
+-## L. Acceptance criteria (Context 10)
+-
+-1. [~] Launches locally and accesses the webcam with permission.
+-2. [~] Recognises custom gestures with a trained classifier (stand-in camera only so far).
+-3. [~] Displays the correct dataset image for a recognised gesture (stand-in camera only so far).
+-4. [x] Ball Knowledge rating and description come only from the metadata (none are set yet).
+-5. [x] Rejects uncertain predictions (70% threshold, Unrecognised state).
+-6. [~] A new gesture can be added by collecting labelled samples and training (collection and training built, not run end to end).
+-7. [~] Dashboard updates during live camera use (stand-in camera only so far).
+-8. [x] Training metrics and a held-out evaluation are available, from real recordings.
+-9. [~] Camera errors, missing images and missing models handled (camera and model handled in code; images depend on Stage 6).
+-10. [x] README explains installation, data collection, training and execution.
++- [~] Privacy and terms drafted; need your name, contact email and a legal review.
++- [ ] Custom domain and HTTPS (needed for camera access anywhere other than localhost).
++- [ ] Camera tested on the final domain in Chrome and Safari.
++
++## L. Final success criteria (Instructions 10)
++
++1. [~] Open a live webcam dashboard. Stand-in camera only.
++2. [~] Show a gesture to the camera. Needs your webcam.
++3. [~] Your trained model identifies the gesture. 0 wrong gestures in 16 replayed clips; webcam pending.
++4. [~] The matching image from your dataset appears by itself. Stand-in camera.
++5. [~] The rating and description appear. Works from `memes.json`, but none are written yet.
++6. [x] Confidence scores and recent recognition activity are shown.
++7. [x] New samples can be collected and the model retrained for new gestures (browser run on a scratch dataset).
++8. [x] New memes can be added and linked to gestures (Memes page and `dataset_manager.py`; Memes page real Streamlit run pending).
++9. [x] Runs locally without paid services.
+diff -ruN -x __pycache__ -x .pytest_cache bk2-orig/04_HANDOFF.md bk2/04_HANDOFF.md
+--- bk2-orig/04_HANDOFF.md	2026-10-14 07:29:15.896063894 +0000
++++ bk2/04_HANDOFF.md	2026-10-14 07:49:35.824688098 +0000
+@@ -1,156 +1,96 @@
+-# Handoff: Ball Knowledge Vision AI (Stage 8 of 8)
++# Handoff: Ball Knowledge Vision AI (all 8 stages built)
+ 
+-For the next session, or for you picking this up later. Read `01_PROJECT_CONTEXT.md` first.
++For the next session, or for you picking this up later. Read `01_PROJECT_CONTEXT.md` first. To have an AI continue the work, give it `02_BUILD_AND_CRITIQUE_PROMPT.md` with the other three files.
+ 
+-## Update, 14 October 2026: Stage 8, testing without a webcam
++## 1. Where things stand
+ 
+-Everything that can run without your webcam was tested end to end. The webcam run is the part left (README, Test the whole pipeline, With your webcam).
++All eight stages are built and tested without a webcam. Your trained model reaches 97.4% on recordings it never saw, and replaying all 16 clips through the live path never showed a wrong gesture. What is left:
+ 
+-**New: `check_pipeline.py`.** Plays clips through the exact live path (mirror, MediaPipe, features, model, steady vote, recent detections) and reports what the dashboard would show. A clip already in the dataset is classified by a model trained without it. `predictor.LiveRecognizer.classify()` was added for this: it runs the same vote and history code on the calling thread, in the video's own time. Tests: `tests/test_check_pipeline.py` and 3 new tests in `tests/test_predictor.py`.
++1. Your webcam run (README, "With your webcam", steps 1 to 9).
++2. Writing the meme titles, Ball Knowledge ratings and descriptions on the new Memes page. All four are empty.
++3. More data: a third first_meme recording, more samples for first_meme, meme_3 and second_meme, and clips in other light or rooms.
+ 
+-**Held-out replay of all 16 recordings** (`python check_pipeline.py "First meme" "Second meme" "Meme 3" "Meme 4" None`; the identical copy in First meme is checked once). Shares of the frames from the first to the last frame with a hand:
++## 2. What changed in this session (14 October 2026)
+ 
+-| Gesture | Clips | Right | Wrong | No gesture | Unsure | No hand | First right, median |
+-|---|---|---|---|---|---|---|---|
+-| first_meme | 2 | 75% | 0% | 5% | 19% | 0% | 0.38 s |
+-| meme_3 | 3 | 87% | 0% | 2% | 12% | 0% | 0.20 s |
+-| meme_4 | 4 | 59% | 0% | 0% | 7% | 33% | 0.10 s |
+-| none | 4 | 78% (No gesture) | 0% | | 21% | 1% | |
+-| second_meme | 3 | 85% | 0% | 2% | 13% | 0% | 0.13 s |
++Six critique-and-improve rounds on the finished app. Full evidence and scores: `docs/ui-critique-log.md`. Weighted score 7.53 to 8.59; the 9.0 gate is not met, because the camera and the new page have not run live.
+ 
+-No clip showed a wrong gesture. The "no hand" share for meme_4 is real: frames from those gaps show no hand in the picture (the person lowered it between attempts).
++| Round | Change | Files |
++|---|---|---|
++| 1 | One name per gesture on every panel (from `memes.json`); collector hint names every shortfall; bar legend; recordings named by time | `dataset_manager.py`, `ui.py`, `views/dashboard.py`, `data_collector.py`, `views/collector.py`, `views/performance.py` |
++| 2 | **New Memes page** to set name, title, rating, description and image, with a live preview; dashboard notice for memes without a rating or description; **privacy page corrected** (it named a Google STUN server the app does not use) and a Meme images section added | `views/memes.py`, `app.py`, `dataset_manager.py`, `ui.py`, `views/dashboard.py`, `views/privacy.py`, `config.py` |
++| 3 | Dashboard layout: Recognition and Meme beside the camera, statistics and detections in a row below; tiles with a second line for the latest gesture's time | `views/dashboard.py`, `ui.py` |
++| 4 | Contrast measured; confusion-matrix shading capped so numbers stay at least 4.5:1 | `ui.py` |
++| 5 | Large meme images shrunk for display (the panel refreshes twice a second); uploads over 10 MB refused | `ui.py`, `dataset_manager.py`, `config.py`, `views/memes.py` |
++| 6 | Same names on the performance page; `none` reads "No gesture"; Memes form keyed per gesture; README updated | `views/performance.py`, `dataset_manager.py`, `views/memes.py`, `README.md` |
+ 
+-**Browser run on a scratch copy of the data** (port 8503, `BALLKNOWLEDGE_DATA_DIR` and `BALLKNOWLEDGE_MODEL_DIR` pointed at the scratchpad, so `data/` and `models/` were not touched). Four clips were removed from the scratch dataset first.
++New tests: `tests/test_display.py` (24 test cases). The style tests also check the new page and the critique log. No existing test was changed. The suite now has 312 test cases.
+ 
+-1. Data collector: a removed meme_3 clip was played into the stand-in camera and recorded (countdown, progress, single Start/Stop toggle, "Saved 40 samples for meme_3", dataset table updated). Each browser sample was much closer to the imported samples of the same clip (median distance 0.15) than to other meme_3 recordings (0.50) or other gestures (1.18). A model that never saw the clip labelled 36 of 40 as meme_3, 3 unrecognised, 1 none. So the live camera path and `import_videos.py` produce matching numbers.
+-2. Model performance: Train model worked from the page (13 recordings, held-out 74.6% on this reduced set, l2 0.3).
+-3. Live dashboard with the three removed clips: none showed No gesture or Unrecognised and never a meme; second_meme showed its meme whenever the hand was steady; meme_4 mostly stayed Unrecognised. Offline, the same scratch model scores that clip 0.67 to 0.69 on average, right at the 70% cutoff. Each compression step lowers the share shown a little (54% at full quality, 33% to 44% after JPEG and VP8). The full model does much better on it (94% right in the replay above).
+-4. Stop camera cleared every panel and kept the session history. Undo last recording made the dashboard say "Retrain needed (347 samples then, 307 now)".
++Your previous versions of every changed file are in `docs/handoff/snapshots/before-stage8-critique/`. `docs/handoff/changes-stage8-critique.diff` shows every change.
+ 
+-**Fixed**
+-
+-- The hand tag under the video refreshed every 1 s and the Recognition panel every 0.5 s, so they contradicted each other in 12% of snapshots (for example "No hand" next to a recognised gesture). Both now refresh every 0.5 s (`REFRESH_S` in `views/dashboard.py`): 4% of snapshots, and those are the intended hold of a steady gesture for a few frames after the hand leaves.
+-- `requirements.txt` listed `opencv-python-headless`, but mediapipe depends on `opencv-contrib-python`, so every install had two OpenCV packages writing to the same `cv2` folder. It now lists `opencv-contrib-python` only. Checked in a new scratch venv: install succeeded, 284 tests passed, the clip check gave identical numbers and the app ran with the stand-in camera. Your existing `.venv` still has both and works; leave it, or recreate it with the commands in section 2.
+-
+-**Found, not changed**
+-
+-- meme_4 depends on who does it. With one of the two `11.48 AM` clips removed from training, the other (`11.48 AM #2`, the second person) was read as none on all its samples. With both in the dataset it is fine. Give each gesture at least two recordings per person, or more people.
+-- The browser's WebRTC stream starts at a lower resolution (480x320 seen) and rises to full size within a few seconds. This is normal WebRTC behaviour.
+-- The server log has a macOS warning that a class is defined twice (PyAV and OpenCV each bundle the same video library). It appears with either OpenCV package and caused no errors in any run.
+-- Opening a page URL directly (for example `/collector`) logs two 404s for `/collector/_stcore/health` in the browser console. That is Streamlit probing; the page loads normally.
+-
+-**Tests:** 284 passed (`python -m pytest -q`), also in two fresh venvs.
+-
+-**Still open:** your webcam run (README table), a third first_meme recording, more second_meme samples, recordings made with the webcam on the Data collector page, and meme titles, ratings and descriptions.
+-
+-## Update, 14 October 2026: Meme 3, Meme 4 and none
+-
+-- Imported 11 new clips with `python import_videos.py "Meme 3" "Meme 4" "None"`: meme_3 (both open hands raised, 3 recordings, 48 samples), meme_4 (one hand over the eyes, 4 recordings, 127 samples) and none (random hand shapes and movement, 4 recordings, 119 samples). Every clip was distinct; none were skipped.
+-- The folder images became the memes: `assets/memes/meme_3.jpg` and `assets/memes/meme_4.jpeg`. Titles, ratings and descriptions are still empty for you to set.
+-- Retrained: 380 samples, 16 recordings, 5 gestures. Held-out accuracy 97.4%, macro F1 0.973, cost 0.1056 at l2 0.01. Mistakes: none read as first_meme 4 times and as second_meme 2 times, plus 3 single errors. At the 70% cutoff 92% of predictions are accepted and 98.6% of those are right.
+-- l2 0.01 is the smallest option in `GD_L2_OPTIONS`. Smaller values (0.003 to 0.0003) were tried in a scratch folder: held-out cost falls to 0.0658 but accuracy stays at 97.4%, and the model becomes so confident that at the 90% cutoff wrong answers still get through (98.9% correct, against 100% at l2 0.01). The options were left unchanged.
+-- Checked in the browser with the stand-in camera: meme_3 and meme_4 are recognised at over 99% and their memes show; the none clip shows No gesture, no meme, and adds nothing to Recent detections. These clips are training data, so this checks the wiring, not accuracy. Tests: 266 passed.
+-- The previous data, model and memes.json are saved in `docs/handoff/snapshots/before-meme3-meme4-none/`.
+-- Still open: a third first_meme recording, more samples for second_meme, first_meme and meme_3, clips from a different room or lighting, and a real webcam run (Stage 8).
+-
+-## Update, 13 October 2026: Stage 7
+-
+-- The Recognition panel now shows the steady gesture (4 of the last 7 frames), the same one the meme panel uses, with a Checking state while a gesture is being confirmed and a No gesture state for `none`.
+-- Recent detections: time, gesture and confidence, newest first. One entry per change of steady gesture, or the same gesture after a pause over `HISTORY_REPEAT_GAP_S` (2 s). Kept in memory for the browser session only; the privacy page says so.
+-- New tiles: Latest gesture (with time) and Recognised this session.
+-- Checked in the browser with the stand-in camera at desktop width and 390px. Tests: 266 passed.
+-- Still open: Stage 8 (a real webcam run end to end), plus the data items listed below.
+-
+-## Update, 13 October 2026: Stage 5 check
+-
+-Stages 5 and 6 are built (see `README.md`). Sections 1 to 7 below describe the earlier Stage 4 session; section 6's open items 1, 2 and 4 are done.
+-
+-- Live recognition was run in the browser with a stand-in camera playing frames from the real clips. Every state behaved as specified. This checks the wiring, not accuracy, because those clips are the training data.
+-- Fixed: the FPS tile overstated the frame rate when frames arrive unevenly (24 shown for a 15 fps stream). `vision.py` now averages the gaps between frames. Test: `tests/test_vision.py`.
+-- Changed: model scores that round to 100% or 0% now read "over 99%" or "under 1%" (`ui.score_pct`).
+-- Tests: 250 passed.
+-- Still open: a real webcam run, a `none` gesture, a third distinct `first_meme` recording, clips for `Meme 3` and `Meme 4` (each folder holds only an image so far), and meme titles, ratings and descriptions.
+-
+-## 1. What changed in this session
+-
+-Six critique-and-improve rounds on the Stage 4 site. Full evidence and scores are in `docs/ui-critique-log.md`. Summary:
+-
+-| Round | Change |
+-|---|---|
+-| 1 | Shared staleness check; dashboard "Retrain needed"; test-set line on the performance page; collector captions and legend; pluralisation |
+-| 2 | Camera status above the video; right column in brief order; larger meme slot |
+-| 3 | Halfway-line mark in the header; Live statistics as a card |
+-| 4 | Heading order; table captions and scope; confusion-matrix legend; focus outline; status region |
+-| 5 | Scrollable table regions; responsive tiles; zero overflow at 390px in the stand-in render |
+-| 6 | Progress strip on the dashboard; readiness line on the performance page; header mark spacing fix |
+-
+-Changed files: `ui.py`, `train_model.py`, `data_collector.py`, `views/dashboard.py`, `views/collector.py`, `views/performance.py`. New: `tests/test_status.py`, `docs/` (this folder, the critique log, and screenshots). `app.py`, `config.py`, `vision.py`, `features.py` and the legal pages are unchanged.
+-
+-The original Stage 4 source is saved in `docs/handoff/snapshots/stage4-before-critique/`. `docs/handoff/changes-stage4-to-critiqued.diff` shows every change as a unified diff.
+-
+-## 2. Run it on the Mac
+-
+-These commands are from `README.md`. Run them in the project folder.
++## 3. Run it on the Mac
+ 
+ ```bash
+ cd "/Users/kavishseema/Desktop/Passion Project"
+-rm -rf .venv                      # the existing .venv was built for another machine setup; recreate it
+-python3 -m venv .venv
+ source .venv/bin/activate
+-pip install -r requirements.txt
+-python download_models.py --pose  # once, if the model files are missing
++pip install -r requirements.txt      # nothing new is needed; this only checks
+ streamlit run app.py
+ ```
+ 
+-Open http://localhost:8501 in Chrome, press Start camera and allow access.
++Open http://localhost:8501 in Chrome and press Start camera. If `.venv` is missing or broken, recreate it with the Setup commands in `README.md`.
+ 
+-## 3. Test it
++## 4. Test it
+ 
+ ```bash
+ source .venv/bin/activate
+ python -m pytest -q
++python check_pipeline.py "First meme" "Second meme" "Meme 3" "Meme 4" None
+ ```
+ 
+-Expect about 107 tests. In the review sandbox, 102 passed, 4 Streamlit AppTest tests were not run (they need Streamlit), and 1 `capsys` test was skipped. The Mac run is the first run of those 5.
+-
+-## 4. Pages and components
++Expect 312 tests passed. In the review environment 307 passed and 5 could not run (4 Streamlit AppTest tests for the legal pages, 1 test using pytest's `capsys`); they passed on your Mac before this session. The clip replay should report "A wrong gesture was shown in 0 of 16 clips".
+ 
+-| Page (file) | What it does |
+-|---|---|
+-| Live dashboard (`views/dashboard.py`) | Camera, progress strip, recognition placeholder, meme placeholder, live statistics, recent detections placeholder |
+-| Data collector (`views/collector.py`) | Camera, record a gesture, per-gesture status, manage data |
+-| Model performance (`views/performance.py`) | Readiness, train, test metrics, per-gesture table, confusion matrix, confusion pairs, cutoffs, split, validation comparison |
+-| Privacy policy, Terms (`views/privacy.py`, `views/terms.py`) | Legal pages; show a warning until operator details are set in `config.py` |
+-
+-Shared helpers in `ui.py`: `inject_css`, `page_header` (with the halfway-line mark), `tag`, `tile`, `esc`, `html_table` (captions, scope, scroll region), `confusion_table` (captions, legend, scroll region), `camera_widget` (single start-stop control), `camera_state`, `hand_tag`.
+-
+-## 5. Data contracts
+-
+-**`data/samples.csv`.** One row per frame. Columns: `session_id`, `label`, `person`, `timestamp`, then feature columns `f000` to `f{n-1}`. `n` comes from `features.feature_length("hands")`. Written by `DatasetStore.append`. Validated by `DatasetStore.load`.
++## 5. Results so far
+ 
+-**`data/dataset_meta.json`.** Feature mode the samples were recorded with. A mismatch is an error.
++**Training (real data, 14 October):** 380 samples, 16 recordings, 5 gestures. Held-out accuracy 97.4%, cost 0.1056, macro F1 0.973, l2 0.01. At the 70% cutoff 92% of predictions are accepted and 98.6% of those are right. Reproduced exactly on a second machine.
+ 
+-**`models/training_report.json`.** Written by `train_model.train()`. Keys used by the UI: `trained_at`, `model_name`, `feature_mode`, `labels`, `dataset` (`rows_loaded`, `dropped`), `split` (`train`, `val`, `test`, each with `sessions` and `samples`), `candidates`, `selected`, `test` (`accuracy`, `macro_f1`, `samples`, `labels`, `per_class`, `confusion_matrix`, `top_confusions`, `thresholds`), `warnings`.
++**Clip replay** (each clip classified by a model that never saw it; shares of the frames from the first to the last frame with a hand):
+ 
+-**`models/gesture_model.joblib`** and **`models/label_mapping.json`.** Written together. A failed run leaves the previous pair untouched.
++| Gesture | Clips | Right | Wrong | No gesture | Unsure | No hand |
++|---|---|---|---|---|---|---|
++| first_meme | 2 | 75% | 0% | 5% | 19% | 0% |
++| meme_3 | 3 | 87% | 0% | 2% | 12% | 0% |
++| meme_4 | 4 | 59% | 0% | 0% | 7% | 33% |
++| none | 4 | 78% (No gesture) | 0% | | 21% | 1% |
++| second_meme | 3 | 85% | 0% | 2% | 13% | 0% |
+ 
+-**Shared check.** `train_model.staleness(report, dataset_rows, feature_mode)` returns a list of reasons the model is out of date. Empty means current.
++The meme_4 "no hand" share is real: the hand was lowered between attempts in those clips.
+ 
+-## 6. Open items
++**Known behaviour:** meme_4 depends on who does it (with one person's clips held out, the other person's were read as none). The WebRTC stream starts at a lower resolution and rises within seconds. Opening a page URL directly logs two harmless 404s from Streamlit's health check.
+ 
+-See `03_REQUIREMENTS_AND_CHECKLIST.md`. The main ones:
++## 6. Pages and shared code
+ 
+-1. Stage 5: live recognition (`predictor.py`, not yet written).
+-2. Stage 6: metadata file, meme images, meme panel.
+-3. Stage 7: smoothing in use, recent detections, total and latest gesture.
+-4. The video-upload decision (checklist section F).
+-5. A real camera and real recordings, then a real training run.
+-
+-## 7. How to verify locally (manual steps, on the Mac)
+-
+-1. Launch the app. Confirm each page loads with no red error box.
+-2. Camera: Start camera, allow access, check that "Camera connected" appears and landmarks draw when a hand is visible. Stop camera; check the status returns to "Camera off".
+-3. Recording: pick or name a gesture, Start camera first, Start recording, hold the gesture for 3 seconds of countdown, then check the sample count rises and the bar fills. Repeat in 3 separate recordings per gesture, in different light and distances.
+-4. Training: with at least 2 gestures and 3 recordings each, press Train model. Check the warning, the metrics and the confusion matrix. Remember these are measured on recordings the model did not learn from, and the warnings say how thin that evidence is.
+-5. Staleness: after training, record more samples. The dashboard should say "Retrain needed". Retrain, and it should return to "Trained".
+-6. Narrow window: resize the browser to a phone width. Check that tables scroll inside their own box and the page does not scroll sideways.
++| Page | File |
++|---|---|
++| Live dashboard | `views/dashboard.py` |
++| Data collector | `views/collector.py` |
++| Model performance | `views/performance.py` |
++| Memes | `views/memes.py` |
++| Privacy policy, Terms | `views/privacy.py`, `views/terms.py` |
++
++Shared display code in `ui.py`: `recognition_card`, `meme_card`, `history_card`, `tile`, `html_table`, `confusion_table`, `camera_widget`, `camera_state`, `load_predictor`. Gesture names: `dataset_manager.display_name`. Saving from the Memes page: `dataset_manager.save_edit`.
++
++## 7. Data contracts
++
++- **`data/samples.csv`**: `session_id`, `label`, `person`, `timestamp`, `f000` onward. Written by `DatasetStore.append`; `DatasetStore.session_times()` gives each recording's start.
++- **`data/dataset_meta.json`**: feature mode and length.
++- **`models/gesture_model.joblib`, `label_mapping.json`, `training_report.json`**: written together by `train_model.train()`. The report holds `test` (accuracy, cost, per class, confusion matrix, cutoffs), `evaluation.per_recording`, `cost` (l2 options, history) and `warnings`.
++- **`assets/memes/memes.json`**: gesture id to `gesture_name`, `meme_title`, `image_path` (relative, inside `assets/memes/`), `ball_knowledge_level`, `description`. Text limits: name 60, title 80, rating 40, description 400 characters.
++
++## 8. Open items
++
++1. Webcam run (README steps 1 to 9). Steps 7 to 9 also check the Memes page.
++2. Memes page in real Streamlit (prompt Part 2).
++3. Write the titles, ratings and descriptions.
++4. Data gaps listed in section 1.
++5. Keyboard-only pass; screen-reader announcement of results is not built.
++6. Your decisions: Figma or Streamlit (built in Streamlit), per-gesture threshold, Prediction History page.
++7. Before any public launch: your name and email in `config.py`, a legal review, HTTPS on a real domain.
+diff -ruN -x __pycache__ -x .pytest_cache bk2-orig/README.md bk2/README.md
+--- bk2-orig/README.md	2026-10-14 07:29:15.895265973 +0000
++++ bk2/README.md	2026-10-14 07:46:01.572785456 +0000
+@@ -3,7 +3,7 @@
+ Show a gesture to your webcam; a model you train yourself recognises it and the
+ dashboard shows the matching meme with its Ball Knowledge rating.
+ 
+-**Current status: Stage 8 of 8, waiting on your webcam run.** Built: the live webcam
++**Current status: Stages 1 to 8 built, waiting on your webcam run.** Built: the live webcam
+ dashboard, hand landmarks, a data collector and a video importer for your own gestures,
+ a gradient descent model with an evaluation page, live recognition with smoothing, the
+ meme panel (image, title, Ball Knowledge rating and description per gesture), recent
+@@ -195,7 +195,8 @@
+ - The `none` gesture is never added.
+ - Confidence is the average over the frames that confirmed the gesture.
+ 
+-The statistics tiles show the **latest gesture** and its time, how many gestures were
++Both panels sit in a row below the camera, so the Recognition and Meme result panels
++stay next to the video. The **Live statistics** tiles show the **latest gesture** and its time, how many gestures were
+ **recognised this session**, the number of gesture classes, frames per second, latency
+ and the model state. The panel keeps the last `HISTORY_LENGTH` (10) entries; the count
+ includes all of them.
+@@ -210,6 +211,11 @@
+ gesture name, meme title, image, Ball Knowledge rating and description. Paths are
+ relative, so the project can be moved.
+ 
++- **On the Memes page (easiest):** open Memes in the top navigation, pick a gesture, type
++  the gesture name, meme title, Ball Knowledge rating and description, choose an image if
++  you want to replace it (up to 10 MB), and press Save meme. The panel on the right is the
++  dashboard's Meme result panel, so you see exactly what will appear. The table at the top
++  shows what is still not set.
+ - **From a gesture folder:** put exactly one image (.jpg, .jpeg, .png, .webp or .gif)
+   next to the clips and run `import_videos.py` on the folder. The image is copied to
+   `assets/memes/<gesture>.<extension>`. Fields you already set are kept.
+@@ -225,7 +231,10 @@
+ The rating and description are yours to set. The model only recognises the gesture,
+ and the dashboard says so. Anything not set is shown as "not set", never filled in.
+ A missing or unreadable image, or a damaged `memes.json`, is shown as a message on
+-the dashboard instead of a meme.
++the dashboard instead of a meme. The name you give a gesture is used on every page,
++including the tables on the Model performance page. Large images are shrunk for display
++on the dashboard (the file itself is not changed), because the meme panel refreshes twice
++a second.
+ 
+ ## Test the whole pipeline (Stage 8)
+ 
+@@ -263,10 +272,13 @@
+ |---|---|---|
+ | 1 | Allow camera access | Camera connected, "Receiving 640x480 video" or similar, Frames per second above 10 |
+ | 2 | Raise one hand, then both, then lower them | "1 hand detected", "2 hands detected", then No hand. The skeleton follows your hands |
+-| 3 | Hold each gesture for 3 seconds: first_meme, second_meme, meme_3, meme_4 | Checking for a moment, then the gesture name in green, its meme, and one new row in Recent detections |
++| 3 | Hold each gesture for 3 seconds: first_meme, second_meme, meme_3, meme_4 | Checking for a moment, then the gesture's name in green (the name set on the Memes page, for example "Meme 3"), its meme, and one new row in Recent detections |
+ | 4 | Move a relaxed hand around | No gesture or Unrecognised. Never a meme |
+ | 5 | Switch straight from one gesture to another | The meme changes within about a second and Recent detections adds a row |
+ | 6 | Press Stop camera | The panels clear, Frames per second shows n/a and the camera light goes off |
++| 7 | Open Memes, pick a gesture, type a rating such as 8/10 and a description, press Save meme | A green "Saved" message, the table shows Set, and the preview shows the rating and description |
++| 8 | On Memes, choose a file that is not an image (for example a .txt renamed to .png) and save | A red "Nothing was saved" message; the old image stays |
++| 9 | Back on the Live dashboard, show that gesture | Its meme now shows your rating and description |
+ 
+ Write down any step that does not match, with the gesture and roughly how long it took.
+ A wrong meme in step 3 or any meme in step 4 is the result that matters most.
+@@ -292,7 +304,7 @@
+ |---|---|
+ | `app.py` | Entry point: page setup, favicon, navigation |
+ | `ui.py` | Shared styling and camera widget |
+-| `views/` | Pages: `dashboard.py`, `collector.py`, `performance.py`, `privacy.py`, `terms.py` |
++| `views/` | Pages: `dashboard.py`, `collector.py`, `performance.py`, `memes.py`, `privacy.py`, `terms.py` |
+ | `vision.py` | Frame processing, MediaPipe landmarks, overlay, FPS/latency stats |
+ | `features.py` | Landmark normalisation → feature vectors (used by collection, training and prediction) |
+ | `data_collector.py` | Recorder state machine and the `data/samples.csv` store |
+diff -ruN -x __pycache__ -x .pytest_cache bk2-orig/app.py bk2/app.py
+--- bk2-orig/app.py	2026-10-14 07:29:15.896174090 +0000
++++ bk2/app.py	2026-10-14 07:37:06.155295576 +0000
+@@ -21,6 +21,7 @@
+     st.Page("views/dashboard.py", title="Live dashboard", default=True),
+     st.Page("views/collector.py", title="Data collector"),
+     st.Page("views/performance.py", title="Model performance"),
++    st.Page("views/memes.py", title="Memes"),
+     st.Page("views/privacy.py", title="Privacy policy"),
+     st.Page("views/terms.py", title="Terms and conditions"),
+ ]
+diff -ruN -x __pycache__ -x .pytest_cache bk2-orig/config.py bk2/config.py
+--- bk2-orig/config.py	2026-10-14 07:29:15.896207120 +0000
++++ bk2/config.py	2026-10-14 07:41:12.281394352 +0000
+@@ -24,6 +24,11 @@
+ # Gesture -> meme title, image, Ball Knowledge rating and description (see dataset_manager.py)
+ MEMES_FILE = MEMES_DIR / "memes.json"
+ MEME_IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp", ".gif")
++MEME_MAX_UPLOAD_MB = 10       # larger images are refused on the Memes page
++# The meme panel refreshes twice a second and sends its image each time, so large images
++# are shrunk for display (the file in assets/memes/ is not changed).
++MEME_DISPLAY_MAX_PX = 900     # longest side of the shown image
++MEME_DISPLAY_MAX_KB = 250     # images already smaller than this (and this size) are sent as they are
+ 
+ # --- Camera ---
+ CAMERA_WIDTH = 640
+@@ -89,5 +94,5 @@
+ OPERATOR_NAME = ""            # person or company responsible for this site
+ CONTACT_EMAIL = ""            # where people can reach you about privacy or the terms
+ GOVERNING_LAW = ""            # e.g. "the laws of England and Wales"; the clause is omitted if empty
+-LEGAL_LAST_UPDATED = "13 October 2026"
++LEGAL_LAST_UPDATED = "14 October 2026"
+ FPS_SMOOTHING = 0.9           # exponential moving average factor for the FPS readout
+diff -ruN -x __pycache__ -x .pytest_cache bk2-orig/data_collector.py bk2/data_collector.py
+--- bk2-orig/data_collector.py	2026-10-14 07:29:15.895185301 +0000
++++ bk2/data_collector.py	2026-10-14 07:35:01.018469614 +0000
+@@ -247,6 +247,14 @@
+         }).reset_index()
+         return out.sort_values("label").reset_index(drop=True)
+ 
++    def session_times(self) -> "dict[str, str]":
++        """When each recording started: session id -> its earliest timestamp (ISO text)."""
++        df = self.load()
++        if df.empty:
++            return {}
++        first = df.groupby("session_id")["timestamp"].min()
++        return {str(k): str(v) for k, v in first.items()}
++
+     # --- writing -----------------------------------------------------------------
+     def append(self, result: RecordingResult) -> int:
+         """Save a finished recording. Returns the number of rows written."""
+@@ -300,10 +308,16 @@
+ 
+ def class_status(samples: int, recordings: int) -> "tuple[str, str]":
+     """('ok'|'warn'|'bad', hint) describing how ready a gesture's data is."""
++    short_recordings = max(0, config.MIN_SESSIONS_PER_CLASS - recordings)
++    more_recordings = (f"{short_recordings} more separate recording"
++                       f"{'s' if short_recordings != 1 else ''}")
+     if samples < config.TARGET_MIN_PER_CLASS:
+-        return "bad", f"Needs {config.TARGET_MIN_PER_CLASS - samples} more samples"
+-    if recordings < config.MIN_SESSIONS_PER_CLASS:
+-        return "warn", f"Record {config.MIN_SESSIONS_PER_CLASS - recordings} more separate recording(s)"
++        hint = f"Needs {config.TARGET_MIN_PER_CLASS - samples} more samples"
++        if short_recordings:                 # both shortfalls matter, so name both
++            hint += f" and {more_recordings}"
++        return "bad", hint
++    if short_recordings:
++        return "warn", f"Record {more_recordings}"
+     if samples < config.TARGET_GOOD_PER_CLASS:
+         return "ok", "Ready, more variety will help"
+     return "ok", "Great coverage"
+diff -ruN -x __pycache__ -x .pytest_cache bk2-orig/dataset_manager.py bk2/dataset_manager.py
+--- bk2-orig/dataset_manager.py	2026-10-14 07:29:15.896222435 +0000
++++ bk2/dataset_manager.py	2026-10-14 07:42:16.230139132 +0000
+@@ -60,6 +60,25 @@
+         return self.meme_title or self.gesture_name or self.gesture_id
+ 
+ 
++def display_name(label: Optional[str], records: Optional[Dict[str, MemeRecord]]) -> str:
++    """The name to show for a gesture id: its gesture_name from memes.json if set, else the id.
++    Every panel uses this, so one gesture never appears under two names."""
++    if label is None:
++        return ""
++    record = (records or {}).get(label)
++    if record is not None and record.gesture_name:
++        return record.gesture_name
++    if label == config.NONE_LABEL:
++        return "No gesture"              # the same words the recognition panel uses
++    return label
++
++
++def unfinished(records: Dict[str, MemeRecord], labels: List[str]) -> List[str]:
++    """Gestures in `labels` whose meme has no rating or no description yet."""
++    return [l for l in labels if l != config.NONE_LABEL and l in records
++            and not (records[l].ball_knowledge_level and records[l].description)]
++
++
+ def image_file_problem(path: Path) -> Optional[str]:
+     """Why the file cannot be shown as a meme image, or None if it can."""
+     if path.suffix.lower() not in config.MEME_IMAGE_SUFFIXES:
+@@ -190,6 +209,37 @@
+         return True
+ 
+ 
++def save_edit(library: MemeLibrary, gesture_id: str, *, gesture_name: str, meme_title: str,
++              ball_knowledge_level: str, description: str,
++              upload_name: Optional[str] = None, upload_bytes: Optional[bytes] = None) -> MemeRecord:
++    """Save one gesture's meme from the Memes page. Text fields are saved as given (an empty
++    field clears it). An uploaded image is checked and copied exactly like --image; if it
++    is not a readable image, nothing at all is written."""
++    image = None
++    tmp_dir = None
++    if upload_bytes is not None and len(upload_bytes) > config.MEME_MAX_UPLOAD_MB * 1024 * 1024:
++        raise MemeError(f"{upload_name or 'The image'} is larger than {config.MEME_MAX_UPLOAD_MB} MB. "
++                        "Choose a smaller image.")
++    try:
++        if upload_bytes is not None:
++            import tempfile
++            suffix = Path(upload_name or "").suffix.lower()
++            tmp_dir = Path(tempfile.mkdtemp(prefix="bk-meme-"))
++            image = tmp_dir / f"upload{suffix}"
++            image.write_bytes(upload_bytes)
++        try:
++            return library.update(gesture_id, image=image, gesture_name=gesture_name,
++                                  meme_title=meme_title, ball_knowledge_level=ball_knowledge_level,
++                                  description=description)
++        except MemeError as exc:            # name the file the user chose, not the temporary copy
++            if image is not None and upload_name:
++                raise MemeError(str(exc).replace(image.name, upload_name)) from exc
++            raise
++    finally:
++        if tmp_dir is not None:
++            shutil.rmtree(tmp_dir, ignore_errors=True)
++
++
+ def describe(library: MemeLibrary) -> str:
+     records = library.load()
+     if not records:
+diff -ruN -x __pycache__ -x .pytest_cache bk2-orig/docs/ui-critique-log.md bk2/docs/ui-critique-log.md
+--- bk2-orig/docs/ui-critique-log.md	1970-01-01 00:00:00.000000000 +0000
++++ bk2/docs/ui-critique-log.md	2026-10-14 07:49:35.819264235 +0000
+@@ -0,0 +1,113 @@
++# UI critique log: Ball Knowledge Vision AI (Stages 1 to 8 complete)
++
++Six critique-and-improve rounds on the finished app, 14 October 2026. Each round: critique with evidence, fix, run the tests, render the pages, score.
++
++## How this was checked, and its limits
++
++- **Real data.** Every render used your real `data/samples.csv` (380 samples, 16 recordings, 5 gestures), your saved model and your `assets/memes/`, copied into scratch folders. Nothing in `data/`, `models/` or `assets/` was changed.
++- **Real recognition code.** The live states were made by feeding real recorded samples through the real `predictor.Predictor` and `LiveRecognizer`. Only the camera was simulated (a placeholder box and fixed FPS and latency of 24 and 18.4 ms).
++- **No live Streamlit.** Streamlit, streamlit-webrtc and MediaPipe could not be installed in the review environment (package registries unreachable). The page scripts in `views/` were executed against a stand-in that records the HTML they emit, using the real `ui.py` CSS, then screenshotted in Chromium at 1280px and 390px. Streamlit's own spacing, widgets and fonts differ slightly. The new Memes page form has not been run in real Streamlit.
++- **Tests.** Run with a stand-in for pytest: 307 passed, 5 not run (4 Streamlit AppTest tests for the legal pages, 1 test that needs pytest's `capsys`). The suite on the Mac before this session was 284 passed; it now has 312 test cases (24 in the new `tests/test_display.py`).
++- **Independent check of the numbers.** Retraining on your real samples in a scratch folder reproduced the saved report exactly: held-out accuracy 97.37%, cost 0.1056, macro F1 0.9729, l2 0.01, identical confusion matrix and cutoff table.
++
++## Rubric
++
++| Dimension | Weight | Question |
++|---|---|---|
++| Data truth | 25% | Is every number measured, labelled and sourced, and every statement on the site true? |
++| Recognition and data state | 20% | Does each state (off, no hand, checking, unrecognised, no gesture, recognised, stale, not trained, meme missing) show distinctly and consistently? |
++| Flow and action clarity | 15% | Can the user see what to do next, without the terminal? |
++| Visual hierarchy and brand | 15% | Is the most important result first and balanced? |
++| Interaction reliability | 10% | Do controls behave and recover from errors? |
++| Accessibility and responsive | 10% | Headings, captions, contrast, focus, no sideways scroll at 390px. |
++| Maintainability | 5% | Shared logic in one place, tests, docs. |
++
++Gate: weighted 9.0 or more, every dimension 8.5 or more.
++
++## Scores
++
++| Round | Data truth | State | Flow | Visual | Interaction | Access. | Maintain. | Weighted |
++|---|---|---|---|---|---|---|---|---|
++| 0 baseline | 8.0 | 8.0 | 6.5 | 7.0 | 7.5 | 7.5 | 8.0 | 7.53 |
++| 1 names and hints | 8.5 | 8.5 | 6.5 | 7.0 | 7.5 | 7.5 | 8.0 | 7.75 |
++| 2 Memes page, privacy | 8.8 | 8.5 | 8.0 | 7.0 | 7.5 | 7.5 | 8.2 | 8.06 |
++| 3 dashboard layout | 8.8 | 8.5 | 8.0 | 8.3 | 7.5 | 7.5 | 8.2 | 8.26 |
++| 4 contrast, 390px | 8.8 | 8.5 | 8.0 | 8.3 | 7.5 | 8.3 | 8.2 | 8.34 |
++| 5 reliability | 9.0 | 8.5 | 8.0 | 8.3 | 8.0 | 8.3 | 8.4 | 8.45 |
++| 6 consistency | 9.0 | 8.8 | 8.3 | 8.5 | 8.0 | 8.3 | 8.6 | 8.59 |
++
++Final: weighted 8.59. The 9.0 gate is not met. Interaction (8.0) and Accessibility (8.3) stay below 8.5 because the camera, the Memes page form and a keyboard and screen-reader pass have not been run in a real browser session. Those need your Mac.
++
++## Round 0: baseline
++
++Renders: dashboard in 9 states, collector, performance, at 1280px and 390px. No sideways scroll in any.
++
++What works: every state of the Recognition panel is distinct and honest (Checking, Unrecognised with the score below the 70% line, No gesture, No trained model); the confidence is called "the model's own estimate, not a calibrated probability"; every number on the performance page comes from `training_report.json`.
++
++Defects found:
++
++1. **One gesture, two names.** The Recognition panel, top scores, Latest gesture tile and Recent detections said `meme_3`; the Meme result panel said "Meme 3" (`ui.recognition_card`, `views/dashboard.py`).
++2. **Every meme has an empty title, rating and description** (`assets/memes/memes.json`). Success criterion 5 (show the rating and description) cannot be met, and the only way to set them was the terminal.
++3. **Collector hint hides a shortfall.** first_meme has 2 recordings, but its hint said only "Needs 42 more samples" (`data_collector.class_status` returned the first problem only). The performance page warned about the recordings; the collector did not.
++4. **Collector bars and text disagree.** Bars fill toward 300 samples, the hint counts toward 100, with no legend.
++5. **Recordings named by hash.** "Each recording, held out" listed ids like `c79027849fda`, which mean nothing to you.
++6. **Unbalanced dashboard.** Right column about 1,650px tall, camera column about 870px; the Model tile and Latest gesture tile spanned full width with one word each.
++
++## Round 1: names and hints
++
++Fixes:
++
++- `dataset_manager.display_name(label, records)`: the gesture name from `memes.json`, else the id. Used by the Recognition panel (headline, Checking hint, top scores), the Latest gesture tile and Recent detections.
++- `data_collector.class_status` names both shortfalls: "Needs 42 more samples and 1 more separate recording". Plural handled.
++- Collector legend: "Bars fill toward 300 samples, the suggested amount. Ready needs 100 samples from 3 separate recordings."
++- `DatasetStore.session_times()`; the performance page names each recording by when it started, plus the start of its id: "14 Oct 11:35 (c79027)".
++
++Evidence: render shows "Meme 3" in the headline and every table; collector shows the combined hint. Tests: `tests/test_display.py` (names, hints, session times).
++
++## Round 2: Memes page and privacy page
++
++Fixes:
++
++- **New Memes page** (`views/memes.py`, in the navigation after Model performance): a table of what is set per gesture, a form for gesture name, meme title, Ball Knowledge rating, description and image, and a live preview that is the dashboard's own Meme result panel. Saving goes through `dataset_manager.save_edit`, the same checks as the terminal tool. A bad image or text over the limit saves nothing.
++- Dashboard notice: "No Ball Knowledge rating or description yet for: First meme, Meme 3, Meme 4, Second meme. Set them on the Memes page." Missing-image messages now point to the Memes page.
++- **Privacy page was wrong.** It said the camera connection uses Google's STUN server. `ui.py` sets an empty server list, so none is used. Corrected, and a "Meme images" section added. `LEGAL_LAST_UPDATED` is now 14 October 2026.
++
++Tests: save with upload, save without upload keeps the image, bad upload names your file and writes nothing, text over the limit writes nothing, page in navigation.
++
++## Round 3: dashboard layout
++
++Fixes:
++
++- Recognition and Meme result stay beside the camera; Live statistics and Recent detections moved to a full-width row below (a second fragment on the same 0.5 s refresh). Desktop page height fell from about 1,670px to about 1,400px. On a phone the order is camera, recognition, meme, statistics, detections.
++- Six tiles in a three-column grid inside one Live statistics card. The Latest gesture tile shows the name, with the time on its own line ("at 07:39:18"), after the first attempt wrapped as "Meme / 3 07:38:58".
++
++## Round 4: contrast and phone width
++
++Measured contrast (WCAG formula) for the palette: body text 16.1:1, muted text 5.9 to 6.6:1, tags 5.0 to 7.9:1, button text 7.9:1, links 7.6:1. All pass AA except **white numbers on the darkest confusion-matrix cells: 3.13:1 on green**. The shading is now capped (alpha 0.55), giving 4.66:1 on green and 5.98:1 on red. Test: `test_confusion_matrix_numbers_keep_aa_contrast_on_the_darkest_cells`.
++
++390px renders of every page: no sideways scroll; tables scroll inside their own labelled regions.
++
++## Round 5: reliability
++
++- **Meme images were sent twice a second at full size.** The meme panel is part of the 0.5 s refresh and embeds the image. `meme_3.jpg` is 132 KB, so about 350 KB/s; an image uploaded on the new page could have been many MB. Large images are now shrunk for display only (longest side 900px when over 900px or 250 KB; GIFs untouched; the file on disk unchanged), and uploads over 10 MB are refused.
++- Description help says line breaks are joined (the save collapses whitespace).
++- Retrained on the real data in a scratch folder: the saved report reproduced exactly (see the limits section).
++
++Tests: large image shrunk and file unchanged, small image sent as is, oversized upload refused.
++
++## Round 6: consistency
++
++- The Model performance page now uses the same gesture names (per-gesture table, confusion matrix, mix-ups, recordings).
++- `none` reads "No gesture" everywhere, matching the Recognition panel.
++- Memes form widgets keyed per gesture, so text typed for one gesture and not saved never shows in another's form.
++- README: Memes page, new dashboard layout, image shrinking.
++
++Final renders: 12 pages and states at 1280px and 390px, zero sideways scroll in all.
++
++## Unresolved
++
++1. Camera, landmarks and live recognition have not been run on your webcam (README, Test the whole pipeline, With your webcam).
++2. The Memes page has not been run in real Streamlit. Check: save text, upload an image, upload a non-image, switch gesture.
++3. No keyboard or screen-reader pass in a real browser. The live panels are not announced to screen readers (an ARIA live region would re-read the panel every 0.5 s).
++4. Data: first_meme has 2 recordings; first_meme, meme_3 and second_meme are under 100 samples; all clips were filmed in one room on one day.
++5. Titles, ratings and descriptions are still empty. They are yours to write; nothing was filled in.
+diff -ruN -x __pycache__ -x .pytest_cache bk2-orig/tests/test_display.py bk2/tests/test_display.py
+--- bk2-orig/tests/test_display.py	1970-01-01 00:00:00.000000000 +0000
++++ bk2/tests/test_display.py	2026-10-14 07:42:16.247411098 +0000
+@@ -0,0 +1,210 @@
++"""What the pages say about gestures and recordings: one display name per gesture on
++every panel, readiness hints that name every shortfall, and recordings named by when
++they were made. Data here is hand-made; nothing is measured."""
++import sys
++import time
++from pathlib import Path
++
++import numpy as np
++import pytest
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++
++import config  # noqa: E402
++import data_collector as dc  # noqa: E402
++import dataset_manager as dm  # noqa: E402
++import features  # noqa: E402
++import predictor as pr  # noqa: E402
++import ui  # noqa: E402
++
++RECORDS = {
++    "meme_3": dm.MemeRecord("meme_3", gesture_name="Meme 3"),
++    "meme_4": dm.MemeRecord("meme_4", gesture_name="", ball_knowledge_level="7/10", description="x"),
++}
++
++
++# --- names ------------------------------------------------------------------------
++
++@pytest.mark.parametrize("label, expected", [
++    ("meme_3", "Meme 3"),          # gesture_name set
++    ("meme_4", "meme_4"),          # record without a name falls back to the id
++    ("wave", "wave"),              # no record at all
++    ("none", "No gesture"),        # the no-gesture class reads as the recognition panel says it
++    (None, ""),
++])
++def test_display_name(label, expected):
++    assert dm.display_name(label, RECORDS) == expected
++
++
++def test_display_name_without_records_is_the_id():
++    assert dm.display_name("meme_3", None) == "meme_3"
++
++
++def test_recognition_panel_uses_the_same_name_as_the_meme_panel():
++    steady = pr.Steady("meme_3", 0.9, 6, 7)
++    prediction = pr.Prediction(pr.RECOGNISED, "meme_3", 0.92,
++                               (("meme_3", 0.92), ("none", 0.05)), at=time.time())
++    html = ui.recognition_card(None, prediction, True, True, [], steady, RECORDS)
++    assert ">Meme 3<" in html and ">meme_3<" not in html
++
++
++def test_checking_state_names_the_gesture_by_its_display_name():
++    prediction = pr.Prediction(pr.RECOGNISED, "meme_3", 0.92, (("meme_3", 0.92),), at=time.time())
++    html = ui.recognition_card(None, prediction, True, True, [], None, RECORDS)
++    assert "Latest frame: Meme 3." in html
++
++
++def test_history_uses_display_names():
++    entries = (pr.HistoryEntry(time.time(), "meme_3", 0.95),)
++    assert ">Meme 3<" in ui.history_card(entries, 1, True, RECORDS)
++
++
++def test_unfinished_lists_memes_without_rating_or_description():
++    labels = ["meme_3", "meme_4", "none", "wave"]
++    assert dm.unfinished(RECORDS, labels) == ["meme_3"]
++
++
++# --- readiness hints ------------------------------------------------------------------
++
++def test_a_gesture_short_of_samples_and_recordings_names_both():
++    kind, hint = dc.class_status(58, 2)
++    assert kind == "bad"
++    assert f"{config.TARGET_MIN_PER_CLASS - 58} more samples" in hint
++    assert "1 more separate recording" in hint and "recordings" not in hint
++
++
++def test_short_of_samples_only_does_not_mention_recordings():
++    kind, hint = dc.class_status(10, config.MIN_SESSIONS_PER_CLASS)
++    assert kind == "bad" and "recording" not in hint
++
++
++def test_recording_hint_is_plural_when_needed():
++    _, hint = dc.class_status(config.TARGET_MIN_PER_CLASS, 0)
++    assert hint == f"Record {config.MIN_SESSIONS_PER_CLASS} more separate recordings"
++
++
++# --- recordings named by time -------------------------------------------------------------
++
++def test_session_times_give_each_recording_its_first_timestamp(tmp_path):
++    store = dc.DatasetStore(tmp_path / "samples.csv", tmp_path / "meta.json", "hands")
++    n = features.feature_length("hands")
++    for sid, stamp in (("aaa111", "2026-10-13T09:55:01"), ("bbb222", "2026-10-14T11:39:24")):
++        r = dc.RecordingResult(sid, "meme_3", "", stamp)
++        r.samples = [np.zeros(n, dtype=np.float32) for _ in range(3)]
++        store.append(r)
++    assert store.session_times() == {"aaa111": "2026-10-13T09:55:01",
++                                     "bbb222": "2026-10-14T11:39:24"}
++
++
++def test_session_times_of_an_empty_dataset(tmp_path):
++    store = dc.DatasetStore(tmp_path / "samples.csv", tmp_path / "meta.json", "hands")
++    assert store.session_times() == {}
++
++
++# --- saving from the Memes page ---------------------------------------------------------
++
++def _png_bytes(colour=(20, 120, 60)):
++    import io
++    from PIL import Image
++    buf = io.BytesIO()
++    Image.new("RGB", (30, 20), colour).save(buf, format="PNG")
++    return buf.getvalue()
++
++
++def test_save_edit_writes_text_and_copies_the_upload(tmp_path):
++    lib = dm.MemeLibrary(tmp_path / "project")
++    rec = dm.save_edit(lib, "meme_3", gesture_name="Meme 3", meme_title="Absolute cinema",
++                       ball_knowledge_level="9/10", description="Both hands up.",
++                       upload_name="cinema.png", upload_bytes=_png_bytes())
++    assert rec.image_path == "assets/memes/meme_3.png"
++    assert lib.image_problem(rec) is None
++    saved = lib.load()["meme_3"]
++    assert (saved.meme_title, saved.ball_knowledge_level, saved.description) == (
++        "Absolute cinema", "9/10", "Both hands up.")
++    assert dm.unfinished(lib.load(), ["meme_3"]) == []
++
++
++def test_save_edit_without_upload_keeps_the_image_and_can_clear_text(tmp_path):
++    lib = dm.MemeLibrary(tmp_path / "project")
++    dm.save_edit(lib, "meme_3", gesture_name="Meme 3", meme_title="t", ball_knowledge_level="9/10",
++                 description="d", upload_name="a.png", upload_bytes=_png_bytes())
++    rec = dm.save_edit(lib, "meme_3", gesture_name="Meme 3", meme_title="", ball_knowledge_level="",
++                       description="")
++    assert rec.image_path == "assets/memes/meme_3.png" and rec.meme_title == ""
++    assert dm.unfinished(lib.load(), ["meme_3"]) == ["meme_3"]
++
++
++def test_a_bad_upload_saves_nothing_and_names_the_users_file(tmp_path):
++    lib = dm.MemeLibrary(tmp_path / "project")
++    with pytest.raises(dm.MemeError) as err:
++        dm.save_edit(lib, "meme_3", gesture_name="Meme 3", meme_title="t", ball_knowledge_level="9/10",
++                     description="d", upload_name="holiday.png", upload_bytes=b"not an image")
++    assert "holiday.png" in str(err.value)
++    assert lib.load() == {}
++
++
++def test_text_over_the_limit_saves_nothing(tmp_path):
++    lib = dm.MemeLibrary(tmp_path / "project")
++    with pytest.raises(dm.MemeError):
++        dm.save_edit(lib, "meme_3", gesture_name="x", meme_title="t",
++                     ball_knowledge_level="9" * (dm.MAX_TEXT["ball_knowledge_level"] + 1),
++                     description="")
++    assert lib.load() == {}
++
++
++def test_memes_page_is_in_the_navigation():
++    app = (Path(__file__).resolve().parents[1] / "app.py").read_text()
++    assert 'st.Page("views/memes.py"' in app
++
++
++# --- contrast ---------------------------------------------------------------------------
++
++def _luminance(rgb):
++    def f(c):
++        c /= 255
++        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
++    r, g, b = rgb
++    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
++
++
++def test_confusion_matrix_numbers_keep_aa_contrast_on_the_darkest_cells():
++    import re
++    html = ui.confusion_table(["a", "b"], [[10, 0], [5, 5]])
++    alphas = [float(a) for a in re.findall(r"rgba\(\d+,\d+,\d+,([0-9.]+)\)", html)]
++    assert max(alphas) <= 0.55
++    surface2, text = (0x15, 0x1d, 0x19), (0xe6, 0xec, 0xe8)
++    for colour in ((47, 191, 113), (229, 100, 95)):
++        cell = tuple(round(c * max(alphas) + s * (1 - max(alphas))) for c, s in zip(colour, surface2))
++        hi, lo = sorted([_luminance(text), _luminance(cell)], reverse=True)
++        assert (hi + 0.05) / (lo + 0.05) >= 4.5
++
++
++# --- meme image size on the dashboard ----------------------------------------------------
++
++def test_large_meme_images_are_shrunk_for_display_but_not_on_disk(tmp_path):
++    from PIL import Image
++    path = tmp_path / "big.png"
++    Image.effect_noise((2400, 1600), 60).convert("RGB").save(path)
++    before = path.read_bytes()
++    uri = ui._data_uri(str(path), path.stat().st_mtime_ns)
++    assert uri.startswith("data:image/jpeg;base64,")
++    assert len(uri) < len(before)
++    assert path.read_bytes() == before
++
++
++def test_small_meme_images_are_sent_unchanged(tmp_path):
++    import base64
++    from PIL import Image
++    path = tmp_path / "small.png"
++    Image.new("RGB", (200, 150), (10, 90, 40)).save(path)
++    uri = ui._data_uri(str(path), path.stat().st_mtime_ns)
++    assert uri == "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode("ascii")
++
++
++def test_oversized_uploads_are_refused_before_anything_is_written(tmp_path):
++    lib = dm.MemeLibrary(tmp_path / "project")
++    big = b"0" * (config.MEME_MAX_UPLOAD_MB * 1024 * 1024 + 1)
++    with pytest.raises(dm.MemeError, match="larger than"):
++        dm.save_edit(lib, "meme_3", gesture_name="", meme_title="", ball_knowledge_level="",
++                     description="", upload_name="huge.png", upload_bytes=big)
++    assert lib.load() == {}
+diff -ruN -x __pycache__ -x .pytest_cache bk2-orig/ui.py bk2/ui.py
+--- bk2-orig/ui.py	2026-10-14 07:29:15.896411229 +0000
++++ bk2/ui.py	2026-10-14 07:41:18.910813192 +0000
+@@ -63,12 +63,16 @@
+ /* stat tiles */
+ .tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: .7rem; margin-bottom: 1rem; }
+ .tiles.four { grid-template-columns: repeat(4, 1fr); }
+-@media (max-width: 720px) { .tiles.four { grid-template-columns: repeat(2, 1fr); } }
++.tiles.three { grid-template-columns: repeat(3, 1fr); margin-bottom: 0; }
++@media (max-width: 720px) { .tiles.four, .tiles.three { grid-template-columns: repeat(2, 1fr); } }
++.card .tile { background: var(--surface2); }
+ .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: .8rem 1rem; }
+ .tile.wide { grid-column: 1 / -1; }
+ .tile .k { font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 650; }
+ .tile .v { font-size: 1.5rem; font-weight: 650; margin-top: .15rem; color: var(--text);
+            font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
++.tile.worded .v { font-size: 1.15rem; line-height: 1.3; margin-top: .3rem; }
++.tile .note { color: var(--muted); font-size: .8rem; font-variant-numeric: tabular-nums; }
+ .tile .v small { font-size: .8rem; color: var(--muted); font-weight: 500; margin-left: .2rem; }
+ 
+ /* recognition and empty states */
+@@ -162,11 +166,13 @@
+     return f'<span class="tag {kind}">{text}</span>'
+ 
+ 
+-def tile(label: str, value: str, unit: str = "", wide: bool = False) -> str:
+-    """A stat tile. `wide` spans the whole row, for values that are words, not numbers."""
++def tile(label: str, value: str, unit: str = "", wide: bool = False, note: str = "") -> str:
++    """A stat tile. `wide` spans the whole row. `note` is a second line under the value,
++    for a word value with a detail (a gesture name and its time), so the two never wrap together."""
+     small = f"<small>{unit}</small>" if unit else ""
+-    return (f'<div class="tile{" wide" if wide else ""}"><div class="k">{label}</div>'
+-            f'<div class="v">{value}{small}</div></div>')
++    sub = f'<div class="note">{note}</div>' if note else ""
++    return (f'<div class="tile{" wide" if wide else ""}{" worded" if note else ""}"><div class="k">{label}</div>'
++            f'<div class="v">{value}{small}</div>{sub}</div>')
+ 
+ 
+ def esc(value) -> str:
+@@ -238,7 +244,8 @@
+                 cells.append("<td>0</td>")
+                 continue
+             rgb = "47,191,113" if i == j else "229,100,95"
+-            cells.append(f'<td style="background:rgba({rgb},{0.15 + 0.6 * share:.2f})">{count}</td>')
++            # capped at 0.55 so the white number keeps a contrast of at least 4.5:1 (WCAG AA)
++            cells.append(f'<td style="background:rgba({rgb},{0.12 + 0.43 * share:.2f})">{count}</td>')
+         rows.append(f'<tr><th scope="row" class="row">{esc(label)}</th>{"".join(cells)}</tr>')
+     caption = "Confusion matrix on held-out recordings. Rows: true gesture. Columns: what the model predicted."
+     table = (f'<table class="cm"><caption>{caption}</caption><thead><tr>{head}</tr></thead>'
+@@ -319,10 +326,15 @@
+ 
+ def recognition_card(problem: Optional[pr.PredictorError], prediction: Optional[pr.Prediction],
+                      playing: bool, live: bool, stale: "list[str]",
+-                     steady: Optional[pr.Steady] = None) -> str:
++                     steady: Optional[pr.Steady] = None,
++                     records: Optional[Dict[str, dm.MemeRecord]] = None) -> str:
+     """HTML for the recognition panel. Each state has its own tag and wording. A gesture
+     name only appears as the result once it is steady (LiveRecognizer.steady), so a
+-    single frame neither shows a gesture nor hides one that is being held."""
++    single frame neither shows a gesture nor hides one that is being held. `records`
++    (memes.json) supplies the gesture names, so this panel and the meme panel agree."""
++    def name(label: Optional[str]) -> str:
++        return esc(dm.display_name(label, records))
++
+     tags, model_tags = [], []
+     model_label, model_kind = model_state(problem, stale)
+     if model_kind in ("bad", "warn"):
+@@ -359,7 +371,7 @@
+         hint = "The model sees a hand but none of your gestures."
+     elif steady is not None:
+         tags.append(tag("Recognised", "ok"))
+-        headline, recognised = esc(steady.label), True
++        headline, recognised = name(steady.label), True
+         hint = (f"Recognised in {steady.votes} of the last {steady.frames} frames. Confidence is "
+                 "the average over those frames, the model's own estimate, not a calibrated "
+                 "probability.")
+@@ -379,7 +391,7 @@
+     else:                                   # recognised in this frame, not yet steady
+         tags.append(tag("Checking", "off"))
+         headline = "Checking"
+-        hint = (f"Latest frame: {esc(prediction.label)}. It becomes the result once it is "
++        hint = (f"Latest frame: {name(prediction.label)}. It becomes the result once it is "
+                 f"recognised in {config.MIN_STABLE_FRAMES} of the last "
+                 f"{config.SMOOTHING_WINDOW} frames.")
+         detail = confidence_bar(prediction.confidence, prediction.threshold, True)
+@@ -390,7 +402,8 @@
+             f'{detail}<p class="hint">{hint}</p>')
+     if scores_title and prediction.top:
+         body += ('<div class="gap"></div>'
+-                 + html_table(["Gesture", "Score"], [[g, score_pct(p)] for g, p in prediction.top],
++                 + html_table(["Gesture", "Score"],
++                              [[dm.display_name(g, records), score_pct(p)] for g, p in prediction.top],
+                               caption=f"{scores_title}."))
+     if stale and problem is None:
+         body += ('<p class="hint">' + " ".join(esc(s) for s in stale)
+@@ -408,9 +421,33 @@
+ 
+ @functools.lru_cache(maxsize=16)
+ def _data_uri(path: str, mtime_ns: int) -> str:
+-    # keyed by modification time, so a replaced image is read again
+-    data = base64.b64encode(Path(path).read_bytes()).decode("ascii")
+-    return f"data:{_MIME[Path(path).suffix.lower()]};base64,{data}"
++    """The image as a data URI, keyed by modification time so a replaced image is read again.
++    The meme panel is sent to the browser on every refresh, so an image that is large in
++    bytes or pixels is shrunk (MEME_DISPLAY_MAX_PX) for display. The file is not changed.
++    GIFs are sent as they are, so a moving GIF keeps all its frames."""
++    raw = Path(path).read_bytes()
++    suffix = Path(path).suffix.lower()
++    if suffix != ".gif":
++        try:
++            from PIL import Image
++            import io
++            with Image.open(io.BytesIO(raw)) as img:
++                too_big = (max(img.size) > config.MEME_DISPLAY_MAX_PX
++                           or len(raw) > config.MEME_DISPLAY_MAX_KB * 1024)
++                if too_big:
++                    img = img.copy()
++                    img.thumbnail((config.MEME_DISPLAY_MAX_PX, config.MEME_DISPLAY_MAX_PX))
++                    out = io.BytesIO()
++                    if img.mode in ("RGBA", "LA", "P"):
++                        img.save(out, format="PNG", optimize=True)
++                        mime = "image/png"
++                    else:
++                        img.convert("RGB").save(out, format="JPEG", quality=85)
++                        mime = "image/jpeg"
++                    return f"data:{mime};base64,{base64.b64encode(out.getvalue()).decode('ascii')}"
++        except Exception:            # unreadable here: image_problem() has already vetted it
++            pass
++    return f"data:{_MIME[suffix]};base64,{base64.b64encode(raw).decode('ascii')}"
+ 
+ 
+ def meme_card(label: Optional[str], records: Optional[Dict[str, dm.MemeRecord]],
+@@ -426,8 +463,8 @@
+     if load_error:
+         return card(f'<div>{tag("Meme list unreadable", "bad")}</div>'
+                     f'<div class="big">Memes cannot be shown</div><p class="hint">{esc(load_error)} '
+-                    "Fix assets/memes/memes.json, or set each meme again with "
+-                    "<code>python dataset_manager.py</code>.</p>")
++                    "Fix assets/memes/memes.json by hand. The Memes page cannot edit it until it "
++                    "can be read.</p>")
+     if label is None:
+         return empty("No meme yet",
+                      f"A meme appears when a trained gesture is recognised in at least "
+@@ -437,14 +474,14 @@
+     record = (records or {}).get(label)
+     if record is None:
+         return card(f'<div>{tag("No meme set", "warn")}</div><div class="big">{esc(label)}</div>'
+-                    f'<p class="hint">This gesture has no meme yet. Add one with '
+-                    f"<code>python dataset_manager.py {esc(label)} --image &lt;file&gt;</code>, or put one "
+-                    "image in the gesture's folder and run <code>import_videos.py</code> on it.</p>")
++                    f'<p class="hint">This gesture has no meme yet. Add one on the '
++                    f"{link('memes', 'Memes')} page, or with "
++                    f"<code>python dataset_manager.py {esc(label)} --image &lt;file&gt;</code>.</p>")
+     problem = library.image_problem(record)
+     if problem:
+         return card(f'<div>{tag("Image missing", "bad")}</div><div class="big">{esc(record.title)}</div>'
+-                    f'<p class="hint">{esc(problem)} Set it again with '
+-                    f"<code>python dataset_manager.py {esc(label)} --image &lt;file&gt;</code>.</p>")
++                    f'<p class="hint">{esc(problem)} Choose the image again on the '
++                    f"{link('memes', 'Memes')} page.</p>")
+ 
+     path = library.image_file(record)
+     uri = _data_uri(str(path), path.stat().st_mtime_ns)
+@@ -457,8 +494,8 @@
+         f'<div>{tag(esc(record.gesture_name or label), "ok")}'
+         f'{tag(rating, "off" if not record.ball_knowledge_level else "ok")}</div>'
+         f'<div class="big">{esc(record.title)}</div>{description}'
+-        '<p class="hint">The rating and description come from assets/memes/memes.json, set by you. '
+-        "The model only recognises the gesture.</p>")
++        f'<p class="hint">The rating and description are yours, set on the {link("memes", "Memes")} '
++        "page. The model only recognises the gesture.</p>")
+ 
+ 
+ # ---------------------------------------------------------------------------
+@@ -470,7 +507,8 @@
+     return time.strftime("%H:%M:%S", time.localtime(at))
+ 
+ 
+-def history_card(entries: "tuple[pr.HistoryEntry, ...]", total: int, model_ready: bool) -> str:
++def history_card(entries: "tuple[pr.HistoryEntry, ...]", total: int, model_ready: bool,
++                 records: Optional[Dict[str, dm.MemeRecord]] = None) -> str:
+     """HTML for the recent detections panel, newest first. Entries come from
+     predictor.DetectionLog, which adds one per change of steady gesture, not per frame."""
+     def card(body: str) -> str:
+@@ -482,7 +520,7 @@
+         return card(f'<div class="empty"><b>Nothing detected yet</b>{text}</div>')
+     shown = (f"Newest first, {len(entries)} of {total} this session."
+              if total > len(entries) else "Newest first.")
+-    rows = [[clock(e.at), e.label, score_pct(e.confidence)] for e in entries]
++    rows = [[clock(e.at), dm.display_name(e.label, records), score_pct(e.confidence)] for e in entries]
+     return card(html_table(["Time", "Gesture", "Confidence"], rows, numeric_from=2,
+                            caption=shown)
+                 + '<p class="hint">A gesture is added when it becomes the result, and again only '
+diff -ruN -x __pycache__ -x .pytest_cache bk2-orig/views/collector.py bk2/views/collector.py
+--- bk2-orig/views/collector.py	2026-10-14 07:29:15.895331123 +0000
++++ bk2/views/collector.py	2026-10-14 07:35:21.234921209 +0000
+@@ -194,6 +194,10 @@
+                     f'<div class="meter {kind}"><div style="width:{pct}%"></div></div></div>'
+                     f'{tag(label_text, kind)}</div>',
+                     unsafe_allow_html=True)
++            st.markdown(f'<p class="hint">Bars fill toward {config.TARGET_GOOD_PER_CLASS} samples, the '
++                        f"suggested amount. Ready needs {config.TARGET_MIN_PER_CLASS} samples from "
++                        f"{config.MIN_SESSIONS_PER_CLASS} separate recordings.</p>",
++                        unsafe_allow_html=True)
+             if len(summary) < 2:
+                 st.markdown('<p class="hint">Add at least 2 gestures before training.</p>',
+                             unsafe_allow_html=True)
+diff -ruN -x __pycache__ -x .pytest_cache bk2-orig/views/dashboard.py bk2/views/dashboard.py
+--- bk2-orig/views/dashboard.py	2026-10-14 07:29:15.895354948 +0000
++++ bk2/views/dashboard.py	2026-10-14 07:39:17.488397691 +0000
+@@ -62,12 +62,19 @@
+ meme_library = dm.MemeLibrary()
+ if model is not None:
+     try:
++        _records = meme_library.load()
+         without = meme_library.missing_for(model.labels)
++        unfinished = [l for l in dm.unfinished(_records, model.labels) if l not in without]
+     except dm.MemeError:
+-        without = []                     # the meme panel shows the reason
++        _records, without, unfinished = {}, [], []     # the meme panel shows the reason
+     if without:
+-        st.info("No usable meme yet for: " + ", ".join(without) + ". Add one with "
+-                "python dataset_manager.py <gesture> --image <file>.")
++        st.info("No usable meme image yet for: "
++                + ", ".join(dm.display_name(l, _records) for l in without)
++                + ". Add one on the Memes page.")
++    if unfinished:
++        st.info("No Ball Knowledge rating or description yet for: "
++                + ", ".join(dm.display_name(l, _records) for l in unfinished)
++                + ". Set them on the Memes page.")
+ 
+ left, right = st.columns([3, 2], gap="large")
+ 
+@@ -99,36 +106,55 @@
+ with right:
+     @st.fragment(run_every=REFRESH_S)
+     def live_panels() -> None:
+-        """Refreshes twice per second without re-running the whole page."""
++        """Recognition and meme. Refreshes twice per second without re-running the whole page."""
+         playing = bool(ctx.state.playing)
+         stats = processor.get_stats()
+         _, _, live = camera_state(stats, playing)
+         prediction = recognizer.latest()
+         steady = recognizer.steady() if (model is not None and live and pr.is_fresh(prediction)) else None
+-        history, total = recognizer.history()
+-
+-        st.markdown(ui.recognition_card(model_problem, prediction, playing, live, stale, steady),
+-                    unsafe_allow_html=True)
+         try:
+             memes, memes_error = meme_library.load(), None
+         except dm.MemeError as exc:
+             memes, memes_error = None, str(exc)
++
++        st.markdown(ui.recognition_card(model_problem, prediction, playing, live, stale, steady,
++                                        memes),
++                    unsafe_allow_html=True)
+         st.markdown(ui.meme_card(steady.label if steady else None, memes, memes_error, meme_library),
+                     unsafe_allow_html=True)
+-        model_label, _ = ui.model_state(model_problem, stale)
+-        latest = history[0] if history else None
++
++    live_panels()
++
++
++@st.fragment(run_every=REFRESH_S)
++def session_panels() -> None:
++    """Live statistics and recent detections, below the camera and the result panels."""
++    playing = bool(ctx.state.playing)
++    stats = processor.get_stats()
++    _, _, live = camera_state(stats, playing)
++    history, total = recognizer.history()
++    try:
++        memes = meme_library.load()
++    except dm.MemeError:
++        memes = None                         # the meme panel above shows the reason
++    model_label, _ = ui.model_state(model_problem, stale)
++    latest = history[0] if history else None
++    stats_col, history_col = st.columns(2, gap="large")
++    with stats_col:
+         st.markdown(
+-            '<div class="tiles">'
+-            + tile("Latest gesture", ui.esc(latest.label) if latest else "n/a",
+-                   ui.clock(latest.at) if latest else "", wide=True)
++            '<div class="card"><h2>Live statistics</h2><div class="tiles three">'
++            + (tile("Latest gesture", ui.esc(dm.display_name(latest.label, memes)),
++                    note=f"at {ui.clock(latest.at)}") if latest else tile("Latest gesture", "n/a"))
+             + tile("Recognised this session", str(total) if model is not None else "n/a")
+             + tile("Gesture classes", str(n_classes) if n_classes else "n/a")
+             + tile("Frames per second", f"{stats.fps:.0f}" if live else "n/a")
+             + tile("Latency", f"{stats.latency_ms:.1f}" if live else "n/a", "ms" if live else "")
+-            + tile("Model", model_label, wide=True)
+-            + "</div>",
++            + tile("Model", model_label)
++            + "</div></div>",
+             unsafe_allow_html=True,
+         )
+-        st.markdown(ui.history_card(history, total, model is not None), unsafe_allow_html=True)
++    with history_col:
++        st.markdown(ui.history_card(history, total, model is not None, memes), unsafe_allow_html=True)
+ 
+-    live_panels()
++
++session_panels()
+diff -ruN -x __pycache__ -x .pytest_cache bk2-orig/views/memes.py bk2/views/memes.py
+--- bk2-orig/views/memes.py	1970-01-01 00:00:00.000000000 +0000
++++ bk2/views/memes.py	2026-10-14 07:43:59.793175911 +0000
+@@ -0,0 +1,124 @@
++"""Memes page: set the image, title, Ball Knowledge rating and description for each gesture.
++
++Everything here is written to assets/memes/memes.json through dataset_manager, the same
++code as `python dataset_manager.py`. The model only recognises the gesture; the rating
++and description are the user's own and are never generated.
++"""
++from __future__ import annotations
++
++import streamlit as st
++
++import config
++import data_collector as dc
++import dataset_manager as dm
++import train_model
++import ui
++
++ui.page_header(
++    "Memes",
++    "Choose the meme, title, Ball Knowledge rating and description shown for each gesture. "
++    "The model only recognises the gesture. Everything on this page is yours to set.",
++)
++
++msg = st.session_state.pop("memes_msg", None)
++if msg:
++    {"ok": st.success, "bad": st.error}[msg[0]](msg[1])
++
++library = dm.MemeLibrary()
++try:
++    records = library.load()
++except dm.MemeError as exc:
++    st.error(f"{exc} Fix assets/memes/memes.json by hand before editing here, so nothing in it "
++             "is overwritten.")
++    st.stop()
++
++# Every gesture the app knows about: trained, recorded, or already in memes.json.
++known = set(records)
++try:
++    report = train_model.load_report()
++except train_model.TrainingError:
++    report = None
++if report:
++    known.update(report.get("labels", []))
++try:
++    known.update(dc.DatasetStore().labels())
++except dc.DatasetError:
++    pass
++gestures = sorted(g for g in known if g != config.NONE_LABEL)
++
++if not gestures:
++    st.markdown('<div class="empty"><b>No gestures yet</b>Record a gesture on the '
++                f'{ui.link("collector", "Data collector")} page first. Its meme is set here.</div>',
++                unsafe_allow_html=True)
++    st.stop()
++
++
++def state(record, check) -> str:
++    return "Set" if record is not None and check(record) else "Not set"
++
++
++left, right = st.columns([3, 2], gap="large")
++
++with left:
++    with st.container(border=True):
++        ui.card_title("Your memes")
++        rows = []
++        for g in gestures:
++            r = records.get(g)
++            image = ("Missing" if r is None or library.image_problem(r) else "Set")
++            rows.append([dm.display_name(g, records), image,
++                         state(r, lambda x: x.ball_knowledge_level),
++                         state(r, lambda x: x.description)])
++        st.markdown(ui.html_table(["Gesture", "Image", "Rating", "Description"], rows,
++                                  numeric_from=4,
++                                  caption="What is set for each gesture's meme."),
++                    unsafe_allow_html=True)
++        st.markdown(f'<p class="hint">The {config.NONE_LABEL} gesture means a hand with no '
++                    "gesture, so it never shows a meme and is not listed.</p>",
++                    unsafe_allow_html=True)
++
++    with st.container(border=True):
++        ui.card_title("Edit a meme")
++        gid = st.selectbox("Gesture", gestures, format_func=lambda g: dm.display_name(g, records))
++        current = records.get(gid, dm.MemeRecord(gid))
++        # One form and one set of widget keys per gesture, so text typed for one gesture and
++        # not saved never appears in another gesture's form.
++        with st.form(key=f"meme-form-{gid}", border=False):
++            name = st.text_input("Gesture name", value=current.gesture_name, key=f"meme-name-{gid}",
++                                 max_chars=dm.MAX_TEXT["gesture_name"],
++                                 help=f"Shown on every panel instead of the id {gid}.")
++            title = st.text_input("Meme title", value=current.meme_title, key=f"meme-title-{gid}",
++                                  max_chars=dm.MAX_TEXT["meme_title"])
++            rating = st.text_input("Ball Knowledge rating", value=current.ball_knowledge_level,
++                                   key=f"meme-rating-{gid}",
++                                   max_chars=dm.MAX_TEXT["ball_knowledge_level"],
++                                   placeholder="for example 8/10",
++                                   help="Shown exactly as you type it.")
++            description = st.text_area("Description", value=current.description, key=f"meme-desc-{gid}",
++                                       max_chars=dm.MAX_TEXT["description"], height=110,
++                                       help="Shown as one paragraph. Line breaks are joined.")
++            upload = st.file_uploader(
++                "Meme image" if not current.image_path else "Replace the image",
++                type=[s.lstrip(".") for s in config.MEME_IMAGE_SUFFIXES], key=f"meme-image-{gid}",
++                help=f"Up to {config.MEME_MAX_UPLOAD_MB} MB. Copied into assets/memes/ on this computer. "
++                     "Leave empty to keep the current image.")
++            saved = st.form_submit_button("Save meme", type="primary")
++        if saved:
++            try:
++                dm.save_edit(library, gid, gesture_name=name, meme_title=title,
++                             ball_knowledge_level=rating, description=description,
++                             upload_name=upload.name if upload else None,
++                             upload_bytes=upload.getvalue() if upload else None)
++                st.session_state.memes_msg = (
++                    "ok", f"Saved the meme for {dm.display_name(gid, library.load())}. The Live "
++                          "dashboard shows it the next time this gesture is recognised.")
++            except (dm.MemeError, ValueError, OSError) as exc:
++                st.session_state.memes_msg = ("bad", f"Nothing was saved: {exc}")
++            st.rerun()
++
++with right:
++    # The real Meme result panel from the dashboard, for the gesture being edited.
++    st.markdown('<p class="hint" style="margin:0 0 .5rem 0">Preview: the Meme result panel when '
++                f"{ui.esc(dm.display_name(gid, records))} is recognised. Save to update it.</p>",
++                unsafe_allow_html=True)
++    st.markdown(ui.meme_card(gid, records, None, library), unsafe_allow_html=True)
+diff -ruN -x __pycache__ -x .pytest_cache bk2-orig/views/performance.py bk2/views/performance.py
+--- bk2-orig/views/performance.py	2026-10-14 07:29:15.895299057 +0000
++++ bk2/views/performance.py	2026-10-14 07:42:16.230558958 +0000
+@@ -9,6 +9,7 @@
+ 
+ import config
+ import data_collector as dc
++import dataset_manager as dm
+ import train_model as tm
+ import ui
+ from ui import confusion_table, esc, html_table, tag, tile
+@@ -35,9 +36,35 @@
+     report = None
+ 
+ try:
+-    dataset_rows = dc.DatasetStore().row_count()
++    _store = dc.DatasetStore()
++    dataset_rows, recorded = _store.row_count(), _store.session_times()
+ except dc.DatasetError:
+-    dataset_rows = None
++    dataset_rows, recorded = None, {}
++
++
++try:
++    _memes = dm.MemeLibrary().load()
++except dm.MemeError:
++    _memes = {}
++
++
++def name(label: str) -> str:
++    """The gesture's name as the dashboard shows it (set on the Memes page)."""
++    return dm.display_name(label, _memes)
++
++
++def recording_name(session_id: str) -> str:
++    """'13 Oct 09:55 (191fce)': when the recording started, plus the start of its id.
++    A recording deleted since training shows its id only."""
++    when = recorded.get(session_id)
++    if not when:
++        return session_id
++    try:
++        from datetime import datetime
++        stamp = datetime.fromisoformat(when).strftime("%d %b %H:%M")
++    except ValueError:
++        stamp = when
++    return f"{stamp} ({session_id[:6]})"
+ 
+ # ------------------------------------------------------------------ training control
+ with st.container(border=True):
+@@ -110,14 +137,15 @@
+         ui.card_title("Per gesture (held-out recordings)")
+         st.markdown(html_table(
+             ["Gesture", "Precision", "Recall", "F1", "Samples"],
+-            [[l, f"{m['precision']:.3f}", f"{m['recall']:.3f}", f"{m['f1']:.3f}", m["support"]]
++            [[name(l), f"{m['precision']:.3f}", f"{m['recall']:.3f}", f"{m['f1']:.3f}", m["support"]]
+              for l, m in test["per_class"].items()],
+             caption="Precision, recall and F1 for each gesture, from recordings the model did not learn from."),
+             unsafe_allow_html=True)
+ 
+     with st.container(border=True):
+         ui.card_title("Confusion matrix (held-out recordings)")
+-        st.markdown(confusion_table(labels, test["confusion_matrix"]), unsafe_allow_html=True)
++        st.markdown(confusion_table([name(l) for l in labels], test["confusion_matrix"]),
++                    unsafe_allow_html=True)
+ 
+ with right:
+     with st.container(border=True):
+@@ -125,7 +153,7 @@
+         if test["top_confusions"]:
+             st.markdown(html_table(
+                 ["True gesture", "Predicted as", "Times"],
+-                [[c["true"], c["predicted"], f"{c['count']} ({c['share_of_true']:.0%})"]
++                [[name(c["true"]), name(c["predicted"]), f"{c['count']} ({c['share_of_true']:.0%})"]
+                  for c in test["top_confusions"]], numeric_from=2,
+                 caption="The most frequent wrong predictions on held-out recordings."), unsafe_allow_html=True)
+         else:
+@@ -153,9 +181,11 @@
+         ui.card_title("Each recording, held out")
+         st.markdown(html_table(
+             ["Recording", "Gesture", "Samples", "Correct", "Cost"],
+-            [[r["session_id"], r["label"], r["samples"], f"{r['accuracy']:.0%}", f"{r['cost']:.3f}"]
++            [[recording_name(r["session_id"]), name(r["label"]), r["samples"], f"{r['accuracy']:.0%}",
++              f"{r['cost']:.3f}"]
+              for r in report["evaluation"]["per_recording"]], numeric_from=2,
+-            caption="Each recording predicted by a model trained on all the others, worst first."),
++            caption="Each recording, named by when it started, predicted by a model trained on all "
++                    "the others, worst first."),
+             unsafe_allow_html=True)
+         st.markdown('<p class="hint">Every recording is held out once. No frame of a recording is '
+                     "ever used to train the model that tests it.</p>", unsafe_allow_html=True)
+diff -ruN -x __pycache__ -x .pytest_cache bk2-orig/views/privacy.py bk2/views/privacy.py
+--- bk2-orig/views/privacy.py	2026-10-14 07:29:15.895369736 +0000
++++ bk2/views/privacy.py	2026-10-14 07:38:34.722741231 +0000
+@@ -49,6 +49,12 @@
+ nothing from them is sent over the network. Only import videos of people who have agreed
+ to it.</p>
+ 
++<h2>Meme images</h2>
++<p>Images you choose on the Memes page, or with <code>dataset_manager.py</code>, are copied into
++the <code>assets/memes</code> folder on the computer running the application, together with the
++title, rating and description you type into <code>assets/memes/memes.json</code>. They are not
++sent anywhere else. Only use images you have the right to use.</p>
++
+ <h2>What is saved</h2>
+ <p>Only when you start a recording or import a video, each sample saved to
+ <code>data/samples.csv</code> contains:</p>
+@@ -69,10 +75,10 @@
+ 
+ <h2>Network connections</h2>
+ <ul>
+-<li>To set up the camera connection, the browser and the application use a public STUN
+-server operated by Google (<code>stun.l.google.com</code>) unless a different server is
+-configured. A STUN server can see the public IP address of the device that contacts it.
+-No video is sent to it.</li>
++<li>The camera connection is set up directly between your browser and the application.
++No STUN or TURN server is used: the server list in <code>ui.py</code> is empty, so this works
++when the browser and the application run on the same computer. If a server is added to that
++list later, this page must name it.</li>
+ <li>During installation, <code>download_models.py</code> downloads the MediaPipe model files
+ from <code>storage.googleapis.com</code>, and <code>pip</code> downloads packages from PyPI.</li>
+ <li>Streamlit usage statistics are switched off in <code>.streamlit/config.toml</code>.</li>

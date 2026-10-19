@@ -1,0 +1,688 @@
+{
+  "trained_at": "2026-10-13T12:53:04",
+  "sklearn_version": "1.9.1",
+  "feature_mode": "hands",
+  "feature_length": 126,
+  "model_name": "softmax_regression_gradient_descent",
+  "labels": [
+    "first_meme",
+    "second_meme"
+  ],
+  "dataset": {
+    "rows_loaded": 86,
+    "rows_used": 86,
+    "dropped": {},
+    "people": 0,
+    "per_class": {
+      "first_meme": {
+        "samples": 58,
+        "sessions": 2
+      },
+      "second_meme": {
+        "samples": 28,
+        "sessions": 3
+      }
+    }
+  },
+  "evaluation": {
+    "method": "leave_one_recording_out",
+    "recordings": 5,
+    "per_recording": [
+      {
+        "session_id": "191fceea8ca2",
+        "label": "first_meme",
+        "samples": 34,
+        "accuracy": 0.8235,
+        "cost": 0.1534
+      },
+      {
+        "session_id": "8b6564261e11",
+        "label": "second_meme",
+        "samples": 10,
+        "accuracy": 1.0,
+        "cost": 0.0137
+      },
+      {
+        "session_id": "f99a7af61d45",
+        "label": "second_meme",
+        "samples": 8,
+        "accuracy": 1.0,
+        "cost": 0.0098
+      },
+      {
+        "session_id": "9a4c26f294cd",
+        "label": "first_meme",
+        "samples": 24,
+        "accuracy": 1.0,
+        "cost": 0.0031
+      },
+      {
+        "session_id": "17230936937a",
+        "label": "second_meme",
+        "samples": 10,
+        "accuracy": 1.0,
+        "cost": 0.0007
+      }
+    ]
+  },
+  "cost": {
+    "function": "average cross-entropy (each gesture weighted equally) + l2 / 2 x sum of squared weights",
+    "l2": 0.1,
+    "l2_options": [
+      {
+        "l2": 1.0,
+        "held_out_cost": 0.0629,
+        "held_out_accuracy": 0.9884
+      },
+      {
+        "l2": 0.3,
+        "held_out_cost": 0.0509,
+        "held_out_accuracy": 0.9302
+      },
+      {
+        "l2": 0.1,
+        "held_out_cost": 0.0496,
+        "held_out_accuracy": 0.9302
+      },
+      {
+        "l2": 0.03,
+        "held_out_cost": 0.0541,
+        "held_out_accuracy": 0.9302
+      },
+      {
+        "l2": 0.01,
+        "held_out_cost": 0.0617,
+        "held_out_accuracy": 0.9302
+      }
+    ],
+    "held_out_cost": 0.0496,
+    "training_cost": 0.01891,
+    "slope_at_end": 9.878291969649593e-07,
+    "tolerance": 1e-06,
+    "steps": 661,
+    "converged": true,
+    "history": [
+      [
+        0,
+        0.69314718
+      ],
+      [
+        1,
+        0.20695254
+      ],
+      [
+        2,
+        0.15730288
+      ],
+      [
+        3,
+        0.12583561
+      ],
+      [
+        4,
+        0.10432185
+      ],
+      [
+        5,
+        0.08867229
+      ],
+      [
+        6,
+        0.07672055
+      ],
+      [
+        7,
+        0.06726871
+      ],
+      [
+        8,
+        0.05962597
+      ],
+      [
+        9,
+        0.05337096
+      ],
+      [
+        10,
+        0.04822615
+      ],
+      [
+        11,
+        0.04399194
+      ],
+      [
+        12,
+        0.04051325
+      ],
+      [
+        13,
+        0.03766332
+      ],
+      [
+        14,
+        0.03533589
+      ],
+      [
+        15,
+        0.03344138
+      ],
+      [
+        16,
+        0.03190435
+      ],
+      [
+        17,
+        0.03066169
+      ],
+      [
+        18,
+        0.02966088
+      ],
+      [
+        19,
+        0.02885839
+      ],
+      [
+        20,
+        0.02821824
+      ],
+      [
+        21,
+        0.02771074
+      ],
+      [
+        22,
+        0.02731138
+      ],
+      [
+        23,
+        0.02699991
+      ],
+      [
+        24,
+        0.02675957
+      ],
+      [
+        25,
+        0.0265765
+      ],
+      [
+        26,
+        0.0264392
+      ],
+      [
+        27,
+        0.02633812
+      ],
+      [
+        28,
+        0.02626536
+      ],
+      [
+        29,
+        0.02621435
+      ],
+      [
+        30,
+        0.02617968
+      ],
+      [
+        31,
+        0.02615687
+      ],
+      [
+        32,
+        0.02614228
+      ],
+      [
+        33,
+        0.02613292
+      ],
+      [
+        34,
+        0.0261264
+      ],
+      [
+        35,
+        0.02612081
+      ],
+      [
+        36,
+        0.02611467
+      ],
+      [
+        38,
+        0.02609657
+      ],
+      [
+        39,
+        0.02608322
+      ],
+      [
+        40,
+        0.02606648
+      ],
+      [
+        42,
+        0.02602231
+      ],
+      [
+        43,
+        0.02599498
+      ],
+      [
+        44,
+        0.02596441
+      ],
+      [
+        46,
+        0.02589471
+      ],
+      [
+        48,
+        0.02581604
+      ],
+      [
+        49,
+        0.02577434
+      ],
+      [
+        51,
+        0.02568814
+      ],
+      [
+        53,
+        0.02560065
+      ],
+      [
+        54,
+        0.02555718
+      ],
+      [
+        56,
+        0.025472
+      ],
+      [
+        58,
+        0.02539017
+      ],
+      [
+        60,
+        0.02531227
+      ],
+      [
+        62,
+        0.02523819
+      ],
+      [
+        64,
+        0.0251673
+      ],
+      [
+        66,
+        0.02509857
+      ],
+      [
+        68,
+        0.02503084
+      ],
+      [
+        71,
+        0.02492859
+      ],
+      [
+        73,
+        0.02485863
+      ],
+      [
+        76,
+        0.02474954
+      ],
+      [
+        78,
+        0.02467377
+      ],
+      [
+        81,
+        0.02455585
+      ],
+      [
+        84,
+        0.02443389
+      ],
+      [
+        86,
+        0.02435107
+      ],
+      [
+        89,
+        0.02422555
+      ],
+      [
+        92,
+        0.02409932
+      ],
+      [
+        95,
+        0.02397283
+      ],
+      [
+        98,
+        0.02384605
+      ],
+      [
+        102,
+        0.02367601
+      ],
+      [
+        105,
+        0.02354729
+      ],
+      [
+        109,
+        0.0233738
+      ],
+      [
+        112,
+        0.02324245
+      ],
+      [
+        116,
+        0.02306634
+      ],
+      [
+        120,
+        0.02289015
+      ],
+      [
+        124,
+        0.02271486
+      ],
+      [
+        128,
+        0.02254104
+      ],
+      [
+        132,
+        0.02236886
+      ],
+      [
+        137,
+        0.02215593
+      ],
+      [
+        141,
+        0.02198753
+      ],
+      [
+        146,
+        0.02178011
+      ],
+      [
+        151,
+        0.02157725
+      ],
+      [
+        156,
+        0.02138017
+      ],
+      [
+        161,
+        0.02118967
+      ],
+      [
+        167,
+        0.02097019
+      ],
+      [
+        172,
+        0.0207951
+      ],
+      [
+        178,
+        0.02059485
+      ],
+      [
+        184,
+        0.0204063
+      ],
+      [
+        190,
+        0.02023038
+      ],
+      [
+        196,
+        0.02006743
+      ],
+      [
+        203,
+        0.01989339
+      ],
+      [
+        210,
+        0.01973611
+      ],
+      [
+        217,
+        0.01959537
+      ],
+      [
+        224,
+        0.01947105
+      ],
+      [
+        231,
+        0.0193626
+      ],
+      [
+        239,
+        0.01925675
+      ],
+      [
+        247,
+        0.01916861
+      ],
+      [
+        255,
+        0.01909664
+      ],
+      [
+        264,
+        0.01903301
+      ],
+      [
+        273,
+        0.01898536
+      ],
+      [
+        282,
+        0.01895135
+      ],
+      [
+        291,
+        0.01892888
+      ],
+      [
+        301,
+        0.0189149
+      ],
+      [
+        311,
+        0.01890995
+      ],
+      [
+        321,
+        0.01890984
+      ],
+      [
+        332,
+        0.01890983
+      ],
+      [
+        343,
+        0.01890981
+      ],
+      [
+        354,
+        0.0189098
+      ],
+      [
+        366,
+        0.01890979
+      ],
+      [
+        378,
+        0.01890978
+      ],
+      [
+        391,
+        0.01890978
+      ],
+      [
+        404,
+        0.01890978
+      ],
+      [
+        417,
+        0.01890978
+      ],
+      [
+        431,
+        0.01890978
+      ],
+      [
+        445,
+        0.01890978
+      ],
+      [
+        460,
+        0.01890978
+      ],
+      [
+        475,
+        0.01890978
+      ],
+      [
+        491,
+        0.01890978
+      ],
+      [
+        507,
+        0.01890978
+      ],
+      [
+        524,
+        0.01890978
+      ],
+      [
+        542,
+        0.01890978
+      ],
+      [
+        560,
+        0.01890978
+      ],
+      [
+        578,
+        0.01890978
+      ],
+      [
+        597,
+        0.01890978
+      ],
+      [
+        617,
+        0.01890978
+      ],
+      [
+        638,
+        0.01890978
+      ],
+      [
+        659,
+        0.01890978
+      ]
+    ]
+  },
+  "train_accuracy": 1.0,
+  "test": {
+    "samples": 86,
+    "accuracy": 0.9302,
+    "cost": 0.0496,
+    "macro_precision": 0.9118,
+    "macro_recall": 0.9483,
+    "macro_f1": 0.9243,
+    "weighted_f1": 0.9317,
+    "per_class": {
+      "first_meme": {
+        "precision": 1.0,
+        "recall": 0.8966,
+        "f1": 0.9455,
+        "support": 58
+      },
+      "second_meme": {
+        "precision": 0.8235,
+        "recall": 1.0,
+        "f1": 0.9032,
+        "support": 28
+      }
+    },
+    "labels": [
+      "first_meme",
+      "second_meme"
+    ],
+    "confusion_matrix": [
+      [
+        52,
+        6
+      ],
+      [
+        0,
+        28
+      ]
+    ],
+    "top_confusions": [
+      {
+        "true": "first_meme",
+        "predicted": "second_meme",
+        "count": 6,
+        "share_of_true": 0.1034
+      }
+    ],
+    "mean_confidence_correct": 0.995,
+    "mean_confidence_wrong": 0.5721,
+    "thresholds": [
+      {
+        "threshold": 0.5,
+        "coverage": 1.0,
+        "accuracy": 0.9302
+      },
+      {
+        "threshold": 0.6,
+        "coverage": 0.9419,
+        "accuracy": 0.9877
+      },
+      {
+        "threshold": 0.7,
+        "coverage": 0.9302,
+        "accuracy": 1.0
+      },
+      {
+        "threshold": 0.8,
+        "coverage": 0.9302,
+        "accuracy": 1.0
+      },
+      {
+        "threshold": 0.9,
+        "coverage": 0.9186,
+        "accuracy": 1.0
+      }
+    ]
+  },
+  "warnings": [
+    "Fewer than 3 recordings for: first_meme. When one of them is held out, the model learns that gesture from the remaining recording alone, so the held-out scores are a rough guide. Record more sessions.",
+    "Very few samples for: second_meme. Scores for these are unreliable.",
+    "There is no 'none' gesture. The model always picks the closest of your gestures, so a hand doing something else can still be shown as one of them. Record relaxed hands and random movements as a gesture named none.",
+    "The regularisation strength was chosen from 5 options by the lowest cost on these same held-out recordings, so the held-out scores are slightly optimistic."
+  ]
+}

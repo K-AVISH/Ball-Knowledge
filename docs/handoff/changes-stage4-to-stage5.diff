@@ -1,0 +1,1786 @@
+--- a/config.py
++++ b/config.py
+@@ -56,7 +56,11 @@
+ CONFIDENCE_THRESHOLDS = (0.5, 0.6, 0.7, 0.8, 0.9)   # shown in the report to help choose a cutoff
+ 
+ # --- Recognition (used from Stage 5 onwards) ---
++# A prediction below this confidence is shown as "Unrecognised". The confidence is the
++# model's own estimate, not a calibrated probability; use the cutoff table on the
++# Model performance page to choose a value.
+ DEFAULT_CONFIDENCE_THRESHOLD = 0.70
++TOP_PREDICTIONS = 3           # how many gestures the recognition panel lists with their scores
+ SMOOTHING_WINDOW = 7          # number of consecutive frames in the voting window
+ MIN_STABLE_FRAMES = 4         # frames a gesture must win the vote before it shows
+ 
+@@ -69,5 +73,5 @@
+ OPERATOR_NAME = ""            # person or company responsible for this site
+ CONTACT_EMAIL = ""            # where people can reach you about privacy or the terms
+ GOVERNING_LAW = ""            # e.g. "the laws of England and Wales"; the clause is omitted if empty
+-LEGAL_LAST_UPDATED = "12 October 2026"
++LEGAL_LAST_UPDATED = "13 October 2026"
+ FPS_SMOOTHING = 0.9           # exponential moving average factor for the FPS readout
+--- a/data_collector.py
++++ b/data_collector.py
+@@ -2,10 +2,10 @@
+ 
+ Three pieces, none of which touch the UI:
+ 
+-* `slugify_label`  — turns what you type into a safe gesture id (e.g. "four_gesture").
+-* `Recorder`       — a small state machine the video thread feeds with feature
++* `slugify_label`  turns what you type into a safe gesture id (e.g. "four_gesture").
++* `Recorder`       is a small state machine the video thread feeds with feature
+                      vectors. Countdown → recording → finished. Thread-safe.
+-* `DatasetStore`   — the CSV file on disk (`data/samples.csv`). Every row has the
++* `DatasetStore`   is the CSV file on disk (`data/samples.csv`). Every row has the
+                      label, a recording-session id (so training can split by
+                      session, not by neighbouring frames), who recorded it and
+                      the feature vector.
+@@ -223,6 +223,10 @@
+             raise DatasetError(f"{self.csv_path} is missing columns, e.g. {missing[:3]}.")
+         df["person"] = df["person"].fillna("")
+         return df[self.columns]
++
++    def row_count(self) -> int:
++        """Number of saved samples. Raises DatasetError like `load()`."""
++        return len(self.load())
+ 
+     def labels(self) -> List[str]:
+         df = self.load()
+--- a/features.py
++++ b/features.py
+@@ -8,7 +8,7 @@
+ * pose: translate to the hip centre, divide by shoulder width.
+ 
+ The same function is used for data collection (Stage 3), training (Stage 4) and
+-live inference (Stage 5) — that is what keeps training and prediction consistent.
++live inference (Stage 5). That is what keeps training and prediction consistent.
+ """
+ from __future__ import annotations
+ 
+@@ -84,7 +84,7 @@
+     Layout: [right hand 63][left hand 63] (+ [pose 99] in 'hands+pose' mode).
+     A missing hand is zero-filled, so "one hand shown" and "two hands shown"
+     are different, learnable patterns. Returns None when there is nothing to
+-    classify (no hand, or no pose in pose mode) — callers must show the
++    classify (no hand, or no pose in pose mode). Callers must show the
+     "no hand" state instead of guessing.
+     """
+     _check_mode(mode)
+--- a/train_model.py
++++ b/train_model.py
+@@ -302,6 +302,26 @@
+     finally:
+         for p in tmp.values():
+             p.unlink(missing_ok=True)
++
++
++def staleness(report: dict, dataset_rows: Optional[int],
++              feature_mode: str = config.FEATURE_MODE) -> List[str]:
++    """Reasons the saved model is out of date. An empty list means it is current.
++
++    `dataset_rows` is the number of rows in data/samples.csv now (None if it cannot be
++    read). The check compares row counts, so adding one recording and deleting another
++    of exactly the same length is not detected.
++    """
++    reasons = []
++    if dataset_rows is not None and dataset_rows != report["dataset"]["rows_loaded"]:
++        reasons.append(
++            f"The dataset has changed since this model was trained ({report['dataset']['rows_loaded']} "
++            f"samples then, {dataset_rows} now). Train again to include the changes.")
++    if report.get("feature_mode") != feature_mode:
++        reasons.append(
++            f"This model used '{report.get('feature_mode')}' features but the app is set to "
++            f"'{feature_mode}'. Train again before using it.")
++    return reasons
+ 
+ 
+ def load_report(path: Path = None) -> Optional[dict]:
+--- a/ui.py
++++ b/ui.py
+@@ -3,12 +3,15 @@
+ from __future__ import annotations
+ 
+ import html
++from pathlib import Path
++from typing import Optional
+ 
+ import av
+ import streamlit as st
+ from streamlit_webrtc import WebRtcMode, webrtc_streamer
+ 
+ import config
++import predictor as pr
+ from vision import FrameProcessor, LandmarkHook, VisionStats, camera_is_live
+ 
+ # Flat surfaces, one accent colour, small corners, static layout.
+@@ -26,19 +29,22 @@
+ [data-testid="stTopNavLink"], [data-testid="stTopNavSection"] { border-radius: 6px; font-weight: 600; }
+ .block-container { padding-top: 5rem; max-width: 1280px; }
+ 
+-/* page header */
+-.brand { font-size: .78rem; letter-spacing: .08em; text-transform: uppercase;
++/* page header (scoped under .stApp so Streamlit's heading and paragraph styles do not win) */
++.stApp .brand { font-size: .78rem; letter-spacing: .08em; text-transform: uppercase;
+          color: var(--muted); margin: 0 0 .3rem 0; }
+-.page-title { font-size: 1.75rem; font-weight: 650; margin: 0; color: var(--text); }
+-.page-desc { color: var(--muted); margin: .35rem 0 1.5rem 0; max-width: 64ch; }
++.stApp .page-title { font-size: 1.75rem; font-weight: 650; margin: 0; padding: 0; color: var(--text);
++              line-height: 1.25; }
++.stApp .page-desc { color: var(--muted); margin: .35rem 0 1.5rem 0; max-width: 64ch; }
+ 
+ /* cards */
+ .card, [data-testid="stVerticalBlockBorderWrapper"] {
+   background: var(--surface) !important; border: 1px solid var(--border) !important;
+   border-radius: 8px !important; }
+ .card { padding: 1rem 1.2rem; margin-bottom: 1rem; }
+-.card h3, .ctitle { margin: 0 0 .7rem 0; font-size: .74rem; text-transform: uppercase;
+-  letter-spacing: .1em; color: var(--muted); font-weight: 650; }
++.stApp .card h2, .stApp h2.ctitle { margin: 0 0 .7rem 0; padding: 0; font-size: .74rem; text-transform: uppercase;
++  letter-spacing: .1em; color: var(--muted); font-weight: 650; line-height: 1.4; }
++/* section titles are real h2 headings; hide the link icon Streamlit adds to headings */
++[data-testid="stHeaderActionElements"] { display: none !important; }
+ [data-testid="stVerticalBlockBorderWrapper"] > div { padding-bottom: .3rem; }
+ 
+ /* status tags (labels, not buttons) */
+@@ -48,10 +54,12 @@
+ .tag.warn { color: var(--warn);   border-color: rgba(224,176,74,.4);  background: rgba(224,176,74,.08); }
+ .tag.bad  { color: var(--bad);    border-color: rgba(229,100,95,.4);  background: rgba(229,100,95,.08); }
+ .tag.off  { color: var(--muted);  background: var(--surface2); }
+-.hint { color: var(--muted); font-size: .88rem; margin: .4rem 0 0 0; }
++.stApp .hint { color: var(--muted); font-size: .88rem; margin: .4rem 0 0 0; }
+ 
+ /* stat tiles */
+ .tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: .7rem; margin-bottom: 1rem; }
++.tiles.four { grid-template-columns: repeat(4, 1fr); }
++@media (max-width: 720px) { .tiles.four { grid-template-columns: repeat(2, 1fr); } }
+ .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: .8rem 1rem; }
+ .tile .k { font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 650; }
+ .tile .v { font-size: 1.5rem; font-weight: 650; margin-top: .15rem; color: var(--text);
+@@ -59,7 +67,16 @@
+ .tile .v small { font-size: .8rem; color: var(--muted); font-weight: 500; margin-left: .2rem; }
+ 
+ /* recognition and empty states */
+-.big { font-size: 1.5rem; font-weight: 650; line-height: 1.2; }
++.big { font-size: 1.5rem; font-weight: 650; line-height: 1.2; margin: .2rem 0 0 0; overflow-wrap: anywhere; }
++.big.ok { color: var(--accent); }
++.conf { position: relative; height: 8px; border-radius: 2px; background: #1b2620; margin: .7rem 0 .3rem 0; }
++.conf .fill { height: 100%; border-radius: 2px; background: var(--accent); }
++.conf .fill.warn { background: var(--warn); }
++.conf .mark { position: absolute; top: -3px; width: 2px; height: 14px; background: var(--text); }
++.conf-row { display: flex; justify-content: space-between; gap: .8rem; font-size: .82rem;
++            color: var(--muted); font-variant-numeric: tabular-nums; }
++.conf-row b { color: var(--text); }
++.gap { height: .9rem; }
+ .empty { border: 1px dashed #2b3a33; border-radius: 8px; padding: 1.4rem 1rem; text-align: center;
+          color: var(--muted); }
+ .empty b { display: block; color: var(--text); margin-bottom: .2rem; }
+@@ -80,20 +97,29 @@
+ .tips { margin: .2rem 0 0 0; padding-left: 1.1rem; color: var(--muted); font-size: .88rem; }
+ .tips li { margin: .2rem 0; }
+ 
+-/* tables */
++/* tables: wide ones scroll inside their own labelled region, never the page */
++.tbl-wrap { overflow-x: auto; max-width: 100%; }
++.stApp .card a, .stApp .hint a { color: var(--accent); text-decoration: underline; }
++.tbl-wrap:focus-visible, .stApp a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
++.tbl caption, .cm caption { caption-side: top; text-align: left; color: var(--muted); font-size: .8rem;
++  padding: 0 0 .4rem 0; }
+ .tbl { width: 100%; border-collapse: collapse; font-size: .88rem; }
++.tbl th, .tbl td, .cm th, .cm td { border: none; }
+ .tbl th { text-align: left; color: var(--muted); font-size: .72rem; letter-spacing: .08em;
+           text-transform: uppercase; font-weight: 650; padding: .45rem .6rem;
+           border-bottom: 1px solid var(--border); }
+ .tbl td { padding: .5rem .6rem; border-bottom: 1px solid var(--border); color: var(--text); }
+ .tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
+-.tbl tr:last-child td { border-bottom: none; }
++.tbl tr:last-child td, .tbl tr:last-child th { border-bottom: none; }
+ .cm { border-collapse: separate; border-spacing: 3px; width: 100%; font-size: .85rem; }
+ .cm th { color: var(--muted); font-weight: 600; padding: .3rem .4rem; font-size: .75rem; }
+ .cm th.row { text-align: right; white-space: nowrap; }
+ .cm td { text-align: center; padding: .55rem .3rem; border-radius: 4px; background: var(--surface2);
+          font-variant-numeric: tabular-nums; color: var(--text); }
+-.cm-axis { color: var(--muted); font-size: .78rem; margin: .5rem 0 0 0; }
++.stApp .cm-axis { color: var(--muted); font-size: .78rem; margin: .5rem 0 0 0; }
++.tbl th[scope="row"] { font-size: .88rem; letter-spacing: 0; text-transform: none; color: var(--text);
++  font-weight: 500; border-bottom: 1px solid var(--border); padding: .5rem .6rem; }
++.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+ 
+ /* legal pages */
+ .legal { max-width: 70ch; }
+@@ -137,21 +163,49 @@
+     return html.escape(str(value))
+ 
+ 
+-def html_table(headers: "list[str]", rows: "list[list]", numeric_from: int = 1) -> str:
+-    """A flat table. Columns from index `numeric_from` onward are right-aligned numbers."""
+-    head = "".join(f'<th class="{"num" if i >= numeric_from else ""}">{esc(h)}</th>'
++def link(page: str, text: str) -> str:
++    """A link to another page of this app, opened in the same tab."""
++    return f'<a href="/{page}" target="_self">{esc(text)}</a>'
++
++
++def pct(value: Optional[float]) -> str:
++    """0.843 -> '84%'. A missing value is 'n/a', never a made-up number."""
++    return "n/a" if value is None else f"{value:.0%}"
++
++
++def card_title(text: str) -> None:
++    """Section title inside a bordered container, as a real h2 for screen readers."""
++    st.markdown(f'<h2 class="ctitle">{esc(text)}</h2>', unsafe_allow_html=True)
++
++
++def _scroll_region(table: str, label: str) -> str:
++    """Wide tables scroll inside this box (keyboard focusable), not the whole page."""
++    return f'<div class="tbl-wrap" role="region" aria-label="{esc(label)}" tabindex="0">{table}</div>'
++
++
++def html_table(headers: "list[str]", rows: "list[list]", numeric_from: int = 1,
++               caption: str = "") -> str:
++    """A flat table. The first column names each row; columns from index `numeric_from`
++    onward are right-aligned numbers. `caption` describes the table for screen readers."""
++    head = "".join(f'<th scope="col" class="{"num" if i >= numeric_from else ""}">{esc(h)}</th>'
+                    for i, h in enumerate(headers))
+     body = "".join(
+-        "<tr>" + "".join(f'<td class="{"num" if i >= numeric_from else ""}">{esc(c)}</td>'
+-                         for i, c in enumerate(row)) + "</tr>"
++        "<tr>" + "".join(
++            (f'<th scope="row">{esc(c)}</th>' if i == 0 else
++             f'<td class="{"num" if i >= numeric_from else ""}">{esc(c)}</td>')
++            for i, c in enumerate(row)) + "</tr>"
+         for row in rows)
+-    return f'<table class="tbl"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>'
++    cap = f"<caption>{esc(caption)}</caption>" if caption else ""
++    return _scroll_region(f'<table class="tbl">{cap}<thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>',
++                          caption or "Table")
+ 
+ 
+ def confusion_table(labels: "list[str]", matrix: "list[list[int]]") -> str:
+     """Confusion matrix as an HTML heatmap. Rows are the true gesture, columns the prediction.
+-    Shading shows each cell's share of its row: green on the diagonal, red for mistakes."""
+-    head = "<th></th>" + "".join(f"<th>{esc(l)}</th>" for l in labels)
++    Shading shows each cell's share of its row: green on the diagonal, red for mistakes.
++    The numbers are always printed, so the colour is never the only signal."""
++    head = '<th scope="col"><span class="sr">True gesture</span></th>' + "".join(
++        f'<th scope="col">{esc(l)}</th>' for l in labels)
+     rows = []
+     for i, (label, row) in enumerate(zip(labels, matrix)):
+         total = sum(row) or 1
+@@ -163,9 +217,13 @@
+                 continue
+             rgb = "47,191,113" if i == j else "229,100,95"
+             cells.append(f'<td style="background:rgba({rgb},{0.15 + 0.6 * share:.2f})">{count}</td>')
+-        rows.append(f'<tr><th class="row">{esc(label)}</th>{"".join(cells)}</tr>')
+-    return (f'<table class="cm"><thead><tr>{head}</tr></thead><tbody>{"".join(rows)}</tbody></table>'
+-            '<p class="cm-axis">Rows: true gesture. Columns: what the model predicted.</p>')
++        rows.append(f'<tr><th scope="row" class="row">{esc(label)}</th>{"".join(cells)}</tr>')
++    caption = "Test set confusion matrix. Rows: true gesture. Columns: what the model predicted."
++    table = (f'<table class="cm"><caption>{caption}</caption><thead><tr>{head}</tr></thead>'
++             f'<tbody>{"".join(rows)}</tbody></table>')
++    return (_scroll_region(table, "Confusion matrix")
++            + '<p class="cm-axis">Green cells on the diagonal are correct predictions. Red cells are '
++              "mistakes. Darker means a larger share of that gesture's test samples.</p>")
+ 
+ 
+ def get_vision() -> "tuple[FrameProcessor, LandmarkHook]":
+@@ -175,8 +233,134 @@
+         st.session_state.landmark_hook = LandmarkHook()
+         st.session_state.processor = FrameProcessor(frame_hook=st.session_state.landmark_hook)
+     return st.session_state.processor, st.session_state.landmark_hook
++
++
++def get_recognizer() -> pr.LiveRecognizer:
++    """One live recogniser per browser session. Its worker thread runs the model."""
++    if "recognizer" not in st.session_state:
++        st.session_state.recognizer = pr.LiveRecognizer()
++    return st.session_state.recognizer
++
++
++# ---------------------------------------------------------------------------
++# Trained model: loaded once per version, shared by every session
++# ---------------------------------------------------------------------------
++
++def _mtime(path: Path) -> Optional[int]:
++    try:
++        return path.stat().st_mtime_ns
++    except OSError:
++        return None
+ 
+ 
++@st.cache_resource(max_entries=2, show_spinner=False)
++def _cached_predictor(model_path: str, labels_path: str, report_path: str, versions: tuple,
++                      feature_mode: str, threshold: float, top_k: int) -> pr.Predictor:
++    # `versions` holds the files' modification times, so retraining loads the new model
++    # once and every other rerun reuses the loaded one. Failed loads are not cached.
++    return pr.Predictor.load(Path(model_path), Path(labels_path), Path(report_path),
++                             feature_mode, threshold, top_k)
++
++
++def load_predictor() -> "tuple[Optional[pr.Predictor], Optional[pr.PredictorError]]":
++    """(predictor, None) when the saved model is usable, otherwise (None, the reason)."""
++    files = (config.MODEL_PATH, config.LABELS_PATH, config.REPORT_PATH)
++    try:
++        return _cached_predictor(*(str(p) for p in files), tuple(_mtime(p) for p in files),
++                                 config.FEATURE_MODE, config.DEFAULT_CONFIDENCE_THRESHOLD,
++                                 config.TOP_PREDICTIONS), None
++    except pr.PredictorError as exc:
++        return None, exc
++
++
++def model_state(problem: Optional[pr.PredictorError], stale: "list[str]") -> "tuple[str, str]":
++    """(short label, tag kind) for the model: not trained, cannot load, retrain needed, loaded."""
++    if isinstance(problem, pr.NotTrainedError):
++        return "Not trained", "off"
++    if problem is not None:
++        return "Cannot load", "bad"
++    if stale:
++        return "Retrain needed", "warn"
++    return "Loaded", "ok"
++
++
++def confidence_bar(confidence: float, threshold: float, accepted: bool) -> str:
++    """A flat bar for the confidence with a marker at the threshold, plus both numbers."""
++    fill = max(0, min(100, round(confidence * 100)))
++    mark = max(0, min(99, round(threshold * 100)))
++    return (f'<div class="conf" role="img" aria-label="Confidence {pct(confidence)}, '
++            f'threshold {pct(threshold)}"><div class="fill {"" if accepted else "warn"}" '
++            f'style="width:{fill}%"></div><div class="mark" style="left:{mark}%"></div></div>'
++            f'<div class="conf-row"><span>Confidence <b>{pct(confidence)}</b></span>'
++            f'<span>Threshold {pct(threshold)}</span></div>')
++
++
++def recognition_card(problem: Optional[pr.PredictorError], prediction: Optional[pr.Prediction],
++                     playing: bool, live: bool, stale: "list[str]") -> str:
++    """HTML for the recognition panel. Each state has its own tag and wording, and a
++    gesture name only appears as the result when its confidence reached the threshold."""
++    tags, model_tags = [], []
++    model_label, model_kind = model_state(problem, stale)
++    if model_kind in ("bad", "warn"):
++        model_tags.append(tag(model_label, model_kind))     # e.g. Retrain needed, after the result
++    detail, scores_title, recognised = "", "", False
++    if isinstance(problem, pr.NotTrainedError):
++        model_tags = [tag("Not trained", "off")]
++        headline = "No trained model"
++        hint = (f"Record at least 2 gestures on the {link('collector', 'Data collector')} page, "
++                f"then train a model on the {link('performance', 'Model performance')} page. "
++                "Recognition starts here once a model exists.")
++    elif problem is not None:
++        headline = "Model cannot be used"
++        hint = f"{esc(problem)} Training runs on the {link('performance', 'Model performance')} page."
++    elif not live and not playing:
++        tags.append(tag("Camera off", "off"))
++        headline = "Waiting for the camera"
++        hint = "Press Start camera. Gestures are recognised while the camera is on."
++    elif not live:
++        tags.append(tag("Connecting", "off"))
++        headline = "Waiting for video"
++        hint = "Recognition starts as soon as video arrives. If your browser asks for camera access, choose Allow."
++    elif not pr.is_fresh(prediction):
++        tags.append(tag("Starting", "off"))
++        headline = "Waiting for the first prediction"
++        hint = "The model is classifying the first frames."
++    elif prediction.status == pr.NO_HAND:
++        tags.append(tag("No hand", "off"))
++        headline = "No hand detected"
++        hint = "Show one of your trained gestures to the camera."
++    elif prediction.status == pr.ERROR:
++        tags.append(tag("Prediction error", "bad"))
++        headline = "Prediction failed"
++        hint = esc(prediction.error)
++    elif prediction.status == pr.UNRECOGNISED:
++        tags.append(tag("Unrecognised", "warn"))
++        headline = "Unrecognised"
++        hint = (f"The highest score, {pct(prediction.confidence)}, is below the "
++                f"{pct(prediction.threshold)} threshold, so no gesture is shown.")
++        detail = confidence_bar(prediction.confidence, prediction.threshold, False)
++        scores_title = "Scores in this frame, none high enough to count"
++    else:
++        tags.append(tag("Recognised", "ok"))
++        headline, recognised = esc(prediction.label), True
++        hint = ("Based on the latest frame only. Confidence is the model's own estimate, "
++                "not a calibrated probability.")
++        detail = confidence_bar(prediction.confidence, prediction.threshold, True)
++        scores_title = "Top scores in this frame"
++
++    body = (f'<div>{"".join(tags + model_tags)}</div>'
++            f'<div class="big{" ok" if recognised else ""}">{headline}</div>'
++            f'{detail}<p class="hint">{hint}</p>')
++    if scores_title and prediction.top:
++        body += ('<div class="gap"></div>'
++                 + html_table(["Gesture", "Score"], [[g, pct(p)] for g, p in prediction.top],
++                              caption=f"{scores_title}."))
++    if stale and problem is None:
++        body += ('<p class="hint">' + " ".join(esc(s) for s in stale)
++                 + f" Retrain on the {link('performance', 'Model performance')} page.</p>")
++    return f'<div class="card"><h2>Recognition</h2>{body}</div>'
++
++
+ # ---------------------------------------------------------------------------
+ # Camera: one toggle button
+ # ---------------------------------------------------------------------------
+--- a/vision.py
++++ b/vision.py
+@@ -51,8 +51,11 @@
+         self._frame_hook = frame_hook
+         self._last_tick: Optional[float] = None
+         self._latest_features: Optional[np.ndarray] = None
+-        # Optional object with `offer(features_or_None)`; set by the data collector page.
++        # Optional objects with `offer(features_or_None)`. Both receive the same feature
++        # vector: the recorder (set by the data collector page) saves it as a training
++        # sample, the recognizer (set by the dashboard) classifies it on its own thread.
+         self.recorder = None
++        self.recognizer = None
+ 
+     def process(self, frame: np.ndarray) -> np.ndarray:
+         """Annotate one BGR frame and update stats. Never raises."""
+@@ -65,6 +68,8 @@
+             error = None
+             if self.recorder is not None:
+                 self.recorder.offer(info.get("features"))
++            if self.recognizer is not None:
++                self.recognizer.offer(info.get("features"))    # returns at once
+         except Exception as exc:  # keep the stream alive, surface the message
+             error = f"{type(exc).__name__}: {exc}"
+ 
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -1,4 +1,4 @@
+-# Stage 1 — dashboard + camera
++# Stage 1: dashboard and camera
+ streamlit>=1.40
+ streamlit-webrtc==0.78.1  # ui.py styles this component's iframe; re-check after upgrading
+ opencv-python-headless>=4.9
+@@ -8,7 +8,7 @@
+ # Testing
+ pytest>=8.0
+ 
+-# Stage 2 — landmarks (also run: python download_models.py)
++# Stage 2: landmarks (also run: python download_models.py)
+ mediapipe>=0.10.14
+ 
+ # Stage 4: model training
+--- a/README.md
++++ b/README.md
+@@ -3,9 +3,11 @@
+ Show a gesture to your webcam; a model you train yourself recognises it and the
+ dashboard shows the matching meme with its Ball Knowledge rating.
+ 
+-**Current status: Stage 4 of 8** — live webcam dashboard, hand landmarks, a data
+-collector for recording your own gestures, and model training with an evaluation
+-page. Live recognition and memes are not built yet; the dashboard says so honestly.
++**Current status: Stage 5 of 8.** Built: the live webcam dashboard, hand landmarks,
++a data collector for recording your own gestures, model training with an evaluation
++page, and live recognition of the trained gestures. Not built yet: memes and ratings
++(Stage 6), smoothing and detection history (Stage 7) and end-to-end testing (Stage 8).
++The dashboard says so instead of showing placeholder results.
+ 
+ ## Setup (macOS)
+ 
+@@ -50,9 +52,9 @@
+ 5. Repeat for **at least 3 separate sessions per gesture**, changing lighting,
+    distance, background and hand angle between them. Aim for 100–300 samples per
+    gesture and 5–10 gestures. Add a relaxed-hand "none" class too.
+-6. Friends can record with their own name — more people means a better model.
++6. Friends can record with their own name. More people means a better model.
+ 
+-Samples are saved to `data/samples.csv` (landmark numbers only — never images
++Samples are saved to `data/samples.csv` (landmark numbers only, never images
+ or video). Use **Manage data** to undo the last recording or delete a gesture.
+ Frames without a detected hand are never saved.
+ 
+@@ -86,15 +88,50 @@
+ always high. With each gesture tested on one recording the test score is a
+ rough guide, and the report says so. Perfect scores usually mean your recordings
+ were all made in similar conditions, so also try the model live with new
+-lighting, distances and people once live recognition is added.
++lighting, distances and people.
+ 
++## Live recognition (Stage 5)
++
++Once a model is trained, open **Live dashboard**, press **Start camera** and show
++one of your gestures. The Recognition panel shows one of these states:
++
++| State | Meaning |
++|---|---|
++| Not trained | No `models/gesture_model.joblib` yet. Record and train first. |
++| Model cannot be used | The model files are missing, damaged, or were made for another feature mode. The message says what to do (usually: train again). |
++| Retrain needed | The model works, but `data/samples.csv` changed since it was trained. |
++| Waiting for the camera / video | The camera is off or still connecting. |
++| No hand detected | No hand in the frame, so nothing is classified. |
++| Unrecognised | The best score is below the confidence threshold. No gesture is shown. |
++| Recognised | The gesture name, its confidence and the top scores. |
++
++How it works:
++
++- `predictor.py` loads the model and `models/label_mapping.json` once, and checks
++  they match each other and `FEATURE_MODE`. A retrained model is picked up the next
++  time the dashboard loads.
++- The landmark hook builds the feature vector with `features.py`, the same code the
++  data collector used, so live input matches the training data.
++- The model runs on its own thread. The video never waits for it; if the model is
++  slower than the camera, the newest frame is classified and older ones are skipped.
++- `DEFAULT_CONFIDENCE_THRESHOLD` in `config.py` (70% by default) decides what counts.
++  Confidence is the model's own estimate, not a calibrated probability. Use the
++  confidence cutoff table on **Model performance** to choose the value; the row in
++  use is marked there.
++- Each result describes one frame. Smoothing over several frames is Stage 7, so the
++  result can flicker while your hand moves.
++- Nothing from recognition is saved.
++
+ ## Run the tests (no webcam needed)
+ 
+ ```bash
+ source .venv/bin/activate
+-python -m pytest -v
++python -m pytest -q
+ ```
+ 
++`pytest.ini` limits collection to `tests/`. The prediction tests train a model on
++synthetic data, so they check the code, not how well your gestures are recognised.
++
+ ## Project layout
+ 
+ | File | Purpose |
+@@ -106,10 +143,12 @@
+ | `features.py` | Landmark normalisation → feature vectors (used by collection, training and prediction) |
+ | `data_collector.py` | Recorder state machine and the `data/samples.csv` store |
+ | `train_model.py` | Validate, split by recording, train, evaluate and save the classifier |
++| `predictor.py` | Load the saved model once and classify live frames on a worker thread |
+ | `download_models.py` | One-time download of the MediaPipe models |
+ | `config.py` | Paths, camera size, thresholds |
+ | `tests/` | Automated tests |
+-| `data/`, `models/`, `assets/memes/` | Training data, saved models, meme images (filled in later) |
++| `data/`, `models/`, `assets/memes/` | Training data, saved models, meme images (Stage 6) |
++| `docs/` | Critique log and handoff notes |
+ 
+ ## Before any public launch
+ 
+@@ -118,9 +157,9 @@
+ 
+ ## Troubleshooting
+ 
+-- **Stuck on "Connecting…"** — the browser has not granted camera access, or
++- **Stuck on "Connecting"**: the browser has not granted camera access, or
+   another app (Zoom, FaceTime) is using the camera.
+-- **Camera works but no video appears** — try Chrome; Safari's WebRTC can be picky.
+-- **Code changes not showing up** — stop Streamlit (Ctrl-C) and run it again.
+-- **"Hand model missing"** — run `python download_models.py`.
+-- **Port in use** — `streamlit run app.py --server.port 8502`.
++- **Camera works but no video appears**: try Chrome; Safari's WebRTC can be picky.
++- **Code changes not showing up**: stop Streamlit (Ctrl-C) and run it again.
++- **"Hand model missing"**: run `python download_models.py`.
++- **Port in use**: `streamlit run app.py --server.port 8502`.
+--- a/views/dashboard.py
++++ b/views/dashboard.py
+@@ -1,12 +1,15 @@
+-"""Live dashboard page: camera, landmarks, recognition, meme result and stats.
++"""Live dashboard page: camera, landmarks, live recognition, meme result and stats.
+ 
+-The recognition, meme and history panels show plain empty states until a model
+-is trained and connected.
++The trained model is loaded once (ui.load_predictor) and runs on its own worker
++thread (predictor.LiveRecognizer), fed by the video thread. This page only reads the
++latest result. The meme panel and recent detections are later stages and show plain
++empty states until they are built.
+ """
+ from __future__ import annotations
+ 
+ import streamlit as st
+ 
++import data_collector as dc
+ import train_model
+ import ui
+ from ui import camera_state, hand_tag, tile
+@@ -14,28 +17,47 @@
+ CAMERA_KEY = "dashboard-camera"
+ 
+ processor, landmark_hook = ui.get_vision()
++recognizer = ui.get_recognizer()
+ processor.recorder = None            # not recording on this page
+ _rec = st.session_state.get("recorder")
+ if _rec is not None:
+     _rec.cancel()                    # leaving the collector page abandons any recording
+ 
++model, model_problem = ui.load_predictor()
++recognizer.use(model)                # a retrained model replaces the old one here
++processor.recognizer = recognizer if model is not None else None
++
+ try:
+     model_report = train_model.load_report()
+ except train_model.TrainingError:
+     model_report = None
+-n_classes = len(model_report["labels"]) if model_report else None
++try:
++    dataset_rows = dc.DatasetStore().row_count()
++except dc.DatasetError:
++    dataset_rows = None
++stale = train_model.staleness(model_report, dataset_rows) if model_report else []
+ 
++if model is not None:
++    n_classes = len(model.labels)
++elif model_report:
++    n_classes = len(model_report["labels"])
++else:
++    n_classes = None
++
+ ui.page_header(
+     "Live dashboard",
+-    "Webcam preview with hand landmark detection. Gesture recognition and meme results "
+-    "appear here once a model has been trained on your own samples.",
++    "Show a gesture you have trained to the camera. The model classifies each frame and "
++    "says Unrecognised when it is not confident enough, instead of guessing.",
+ )
+ 
++for note in (model.warnings if model is not None else []):
++    st.warning(note)
++
+ left, right = st.columns([3, 2], gap="large")
+ 
+ with left:
+     with st.container(border=True):
+-        st.markdown('<div class="ctitle">Camera</div>', unsafe_allow_html=True)
++        ui.card_title("Camera")
+         ctx = ui.camera_widget(CAMERA_KEY, processor)
+ 
+         landmark_hook.show_landmarks = st.checkbox(
+@@ -55,43 +77,38 @@
+ 
+     if ctx.state.playing is False:
+         processor.reset()  # clear stale stats; the browser releases the camera when it stops
++        recognizer.reset()
+ 
+ 
+ with right:
+-    @st.fragment(run_every=1.0)
++    @st.fragment(run_every=0.5)
+     def live_panels() -> None:
+-        """Refreshes once per second without re-running the whole page."""
++        """Refreshes twice per second without re-running the whole page."""
++        playing = bool(ctx.state.playing)
+         stats = processor.get_stats()
+-        _, _, live = camera_state(stats, bool(ctx.state.playing))
++        _, _, live = camera_state(stats, playing)
++        prediction = recognizer.latest()
+ 
++        st.markdown(ui.recognition_card(model_problem, prediction, playing, live, stale),
++                    unsafe_allow_html=True)
+         st.markdown(
++            '<div class="card"><h2>Meme result</h2>'
++            '<div class="empty"><b>Memes are not linked yet</b>Showing the meme, Ball Knowledge '
++            "rating and description for a recognised gesture is the next part to be built.</div></div>",
++            unsafe_allow_html=True,
++        )
++        model_label, _ = ui.model_state(model_problem, stale)
++        st.markdown(
+             '<div class="tiles">'
+             + tile("Frames per second", f"{stats.fps:.0f}" if live else "n/a")
+             + tile("Latency", f"{stats.latency_ms:.1f}" if live else "n/a", "ms" if live else "")
+             + tile("Gesture classes", str(n_classes) if n_classes else "n/a")
+-            + tile("Model", "Trained" if model_report else "Not trained")
++            + tile("Model", model_label)
+             + "</div>",
+             unsafe_allow_html=True,
+         )
+-        if model_report:
+-            recognition = (
+-                '<div class="big">Model trained</div>'
+-                f'<p class="hint">{n_classes} gestures. Live recognition is not connected to the '
+-                "camera yet, so no prediction is shown. See Model performance for test results.</p>")
+-        else:
+-            recognition = (
+-                '<div class="big">No trained model</div>'
+-                '<p class="hint">Record samples on the Data collector page, then train a model on '
+-                "the Model performance page. The predicted gesture and its confidence will be shown here.</p>")
+-        st.markdown(f'<div class="card"><h3>Recognition</h3>{recognition}</div>', unsafe_allow_html=True)
+         st.markdown(
+-            '<div class="card"><h3>Meme result</h3>'
+-            '<div class="empty"><b>No result yet</b>The meme, its Ball Knowledge rating and '
+-            "description for a recognised gesture will appear here.</div></div>",
+-            unsafe_allow_html=True,
+-        )
+-        st.markdown(
+-            '<div class="card"><h3>Recent detections</h3>'
++            '<div class="card"><h2>Recent detections</h2>'
+             '<div class="empty"><b>Nothing detected</b>Each recognised gesture is listed here '
+             "with its confidence and time.</div></div>",
+             unsafe_allow_html=True,
+--- a/views/collector.py
++++ b/views/collector.py
+@@ -22,6 +22,7 @@
+     st.session_state.recorder = dc.Recorder()
+ recorder: dc.Recorder = st.session_state.recorder
+ processor.recorder = recorder
++processor.recognizer = None                  # no live recognition while collecting samples
+ landmark_hook.show_landmarks = True          # you need to see the skeleton while recording
+ 
+ store = dc.DatasetStore()
+@@ -57,7 +58,7 @@
+ # ------------------------------------------------------------------ camera and progress
+ with left:
+     with st.container(border=True):
+-        st.markdown('<div class="ctitle">Camera</div>', unsafe_allow_html=True)
++        ui.card_title("Camera")
+         ctx = ui.camera_widget(CAMERA_KEY, processor)
+ 
+         @st.fragment(run_every=0.5)
+@@ -111,7 +112,7 @@
+         processor.reset()
+ 
+     with st.container(border=True):
+-        st.markdown('<div class="ctitle">Tips for good data</div>', unsafe_allow_html=True)
++        ui.card_title("Tips for good data")
+         st.markdown(
+             '<ul class="tips">'
+             "<li>Record each gesture in <b>at least 3 separate sessions</b>. The model is tested on "
+@@ -129,7 +130,7 @@
+         {"ok": st.success, "warn": st.warning, "bad": st.error}[msg[0]](msg[1])
+ 
+     with st.container(border=True):
+-        st.markdown('<div class="ctitle">Record a gesture</div>', unsafe_allow_html=True)
++        ui.card_title("Record a gesture")
+ 
+         choice = st.selectbox("Gesture", existing + [NEW_OPTION], disabled=busy)
+         label, label_error = None, None
+@@ -170,7 +171,7 @@
+             st.rerun()
+ 
+     with st.container(border=True):
+-        st.markdown('<div class="ctitle">Your dataset</div>', unsafe_allow_html=True)
++        ui.card_title("Your dataset")
+         if summary is None:
+             pass
+         elif summary.empty:
+--- a/views/performance.py
++++ b/views/performance.py
+@@ -35,13 +35,13 @@
+     report = None
+ 
+ try:
+-    dataset_rows = len(dc.DatasetStore().load())
++    dataset_rows = dc.DatasetStore().row_count()
+ except dc.DatasetError:
+     dataset_rows = None
+ 
+ # ------------------------------------------------------------------ training control
+ with st.container(border=True):
+-    st.markdown('<div class="ctitle">Train</div>', unsafe_allow_html=True)
++    ui.card_title("Train")
+     st.markdown(
+         '<p class="hint" style="margin-top:0">Training uses every recording in data/samples.csv. '
+         "Each gesture needs at least "
+@@ -55,7 +55,8 @@
+             try:
+                 result = tm.train()
+                 notify("ok", f"Trained a {result['model_name']} model. Test accuracy "
+-                             f"{result['test']['accuracy']:.1%} on {result['test']['samples']} unseen samples.")
++                             f"{result['test']['accuracy']:.1%} on {result['test']['samples']} unseen samples. "
++                             "The Live dashboard uses the new model the next time it loads.")
+             except tm.TrainingError as exc:
+                 notify("bad", str(exc))
+         st.rerun()
+@@ -72,13 +73,7 @@
+ labels = test["labels"]
+ 
+ # ------------------------------------------------------------------ status
+-stale = []
+-if dataset_rows is not None and dataset_rows != report["dataset"]["rows_loaded"]:
+-    stale.append("The dataset has changed since this model was trained. Train again to include the changes.")
+-if report["feature_mode"] != config.FEATURE_MODE:
+-    stale.append(f"This model used '{report['feature_mode']}' features but the app is set to "
+-                 f"'{config.FEATURE_MODE}'. Train again before using it.")
+-for text in stale:
++for text in tm.staleness(report, dataset_rows):
+     st.warning(text)
+ 
+ st.markdown(
+@@ -89,7 +84,7 @@
+ )
+ 
+ st.markdown(
+-    '<div class="tiles" style="grid-template-columns:repeat(4,1fr)">'
++    '<div class="tiles four">'
+     + tile("Test accuracy", f"{test['accuracy']:.1%}")
+     + tile("Macro F1", f"{test['macro_f1']:.3f}")
+     + tile("Test samples", str(test["samples"]))
+@@ -105,55 +100,67 @@
+ 
+ with left:
+     with st.container(border=True):
+-        st.markdown('<div class="ctitle">Per gesture (test set)</div>', unsafe_allow_html=True)
++        ui.card_title("Per gesture (test set)")
+         st.markdown(html_table(
+             ["Gesture", "Precision", "Recall", "F1", "Test samples"],
+             [[l, f"{m['precision']:.3f}", f"{m['recall']:.3f}", f"{m['f1']:.3f}", m["support"]]
+-             for l, m in test["per_class"].items()]), unsafe_allow_html=True)
++             for l, m in test["per_class"].items()],
++            caption="Precision, recall and F1 for each gesture on the held-out test recordings."),
++            unsafe_allow_html=True)
+ 
+     with st.container(border=True):
+-        st.markdown('<div class="ctitle">Confusion matrix (test set)</div>', unsafe_allow_html=True)
++        ui.card_title("Confusion matrix (test set)")
+         st.markdown(confusion_table(labels, test["confusion_matrix"]), unsafe_allow_html=True)
+ 
+ with right:
+     with st.container(border=True):
+-        st.markdown('<div class="ctitle">Gestures it mixes up</div>', unsafe_allow_html=True)
++        ui.card_title("Gestures it mixes up")
+         if test["top_confusions"]:
+             st.markdown(html_table(
+                 ["True gesture", "Predicted as", "Times"],
+                 [[c["true"], c["predicted"], f"{c['count']} ({c['share_of_true']:.0%})"]
+-                 for c in test["top_confusions"]], numeric_from=2), unsafe_allow_html=True)
++                 for c in test["top_confusions"]], numeric_from=2,
++                caption="The most frequent wrong predictions on the test set."), unsafe_allow_html=True)
+         else:
+             st.markdown('<p class="hint">No mistakes on the test set.</p>', unsafe_allow_html=True)
+ 
+     with st.container(border=True):
+-        st.markdown('<div class="ctitle">Confidence cutoff</div>', unsafe_allow_html=True)
++        ui.card_title("Confidence cutoff")
+         st.markdown(html_table(
+-            ["Cutoff", "Accepted", "Correct"],
++            ["Cutoff", "Accepted", "Correct", "In use"],
+             [[f"{t['threshold']:.0%}", f"{t['coverage']:.0%}",
+-              "n/a" if t["accuracy"] is None else f"{t['accuracy']:.1%}"] for t in test["thresholds"]]),
++              "n/a" if t["accuracy"] is None else f"{t['accuracy']:.1%}",
++              "Yes" if abs(t["threshold"] - config.DEFAULT_CONFIDENCE_THRESHOLD) < 1e-9 else ""]
++             for t in test["thresholds"]],
++            caption="Share of test predictions kept at each confidence cutoff, and how many of those were right."),
+             unsafe_allow_html=True)
+         st.markdown('<p class="hint">Predictions below the cutoff are rejected as uncertain. '
+-                    "Accepted is the share of test predictions kept. Correct is how many of those were right.</p>",
++                    "Accepted is the share of test predictions kept. Correct is how many of those were right. "
++                    "Confidence is the model's own estimate, not a calibrated probability, so this table "
++                    "is the evidence for choosing a cutoff. The live dashboard uses "
++                    f"{config.DEFAULT_CONFIDENCE_THRESHOLD:.0%}, set by DEFAULT_CONFIDENCE_THRESHOLD in "
++                    "config.py.</p>",
+                     unsafe_allow_html=True)
+ 
+     with st.container(border=True):
+-        st.markdown('<div class="ctitle">How the data was split</div>', unsafe_allow_html=True)
++        ui.card_title("How the data was split")
+         split = report["split"]
+         st.markdown(html_table(
+             ["Set", "Recordings", "Samples"],
+             [[name, split[key]["sessions"], split[key]["samples"]]
+-             for name, key in (("Training", "train"), ("Validation", "val"), ("Test", "test"))]),
++             for name, key in (("Training", "train"), ("Validation", "val"), ("Test", "test"))],
++            caption="Recordings and samples in each part of the split."),
+             unsafe_allow_html=True)
+         st.markdown('<p class="hint">Whole recordings are held out, so no frames from one recording '
+                     "appear in two sets.</p>", unsafe_allow_html=True)
+ 
+ with st.container(border=True):
+-    st.markdown('<div class="ctitle">Models compared on the validation set</div>', unsafe_allow_html=True)
++    ui.card_title("Models compared on the validation set")
+     st.markdown(html_table(
+         ["Model", "Validation accuracy", "Validation macro F1", "Chosen"],
+         [[c["name"].replace("_", " "), f"{c['val_accuracy']:.3f}", f"{c['val_macro_f1']:.3f}",
+-          "Yes" if c["name"] == report["selected"] else ""] for c in report["candidates"]]),
++          "Yes" if c["name"] == report["selected"] else ""] for c in report["candidates"]],
++        caption="Validation scores of each candidate model. The test set played no part in the choice."),
+         unsafe_allow_html=True)
+     dropped = report["dataset"]["dropped"]
+     if dropped:
+--- a/views/privacy.py
++++ b/views/privacy.py
+@@ -31,7 +31,9 @@
+ <h2>How the camera is used</h2>
+ <p>When you press Start camera, your browser sends video frames to the application over a
+ WebRTC connection. The application finds hand landmarks in each frame, draws them on the
+-preview and discards the frame. When the application runs on your own computer, the video
++preview and discards the frame. On the Live dashboard, once you have trained a model, the
++landmark numbers are also passed to that model in memory to recognise your gesture.
++Recognition results are not saved. When the application runs on your own computer, the video
+ never leaves it. When the application is opened through a web address, the frames travel
+ over the internet to the server running it, where they are processed in memory and not
+ stored. You can stop the camera at any time with the Stop camera button, and you can revoke
+--- a/tests/test_style_rules.py
++++ b/tests/test_style_rules.py
+@@ -37,6 +37,20 @@
+     assert "—" not in src, f"em dash in {path.name}"
+ 
+ 
++# Code and the project's own docs. The original brief (Context.md, Instructions.md), the
++# archived snapshot in docs/handoff/snapshots and this tests folder are not checked.
++CODE_AND_DOCS = sorted(
++    [p for p in ALL_PY if "docs" not in p.parts]
++    + [ROOT / "README.md", ROOT / "LAUNCH_CHECKLIST.md", ROOT / "requirements.txt"]
++    + [p for p in (ROOT / "docs").glob("*.md")]
++    + [p for p in (ROOT / "docs" / "handoff").glob("*.md")])
++
++
++@pytest.mark.parametrize("path", CODE_AND_DOCS, ids=lambda p: str(p.relative_to(ROOT)))
++def test_no_em_dashes_in_code_or_docs(path):
++    assert "—" not in text(path), f"em dash in {path.relative_to(ROOT)}"
++
++
+ @pytest.mark.parametrize("path", UI_FILES, ids=lambda p: p.name)
+ def test_no_gradients_animation_or_purple(path):
+     src = text(path).lower()
+--- a/predictor.py
++++ b/predictor.py
+@@ -0,0 +1,313 @@
++"""Live gesture recognition: load the trained classifier once and classify frames.
++
++Two pieces, neither of which touches the UI:
++
++* `Predictor`       loads models/gesture_model.joblib and models/label_mapping.json,
++                    checks that they match each other and the current feature mode,
++                    and turns one feature vector into a `Prediction`.
++* `LiveRecognizer`  runs a Predictor on its own worker thread. The video thread hands
++                    it the newest feature vector with `offer()`, which never waits for
++                    the model. A slow model lowers the prediction rate, not the video
++                    frame rate. Frames that arrive while the model is busy are skipped
++                    and only the newest one is classified.
++
++The feature vector is the one `vision.LandmarkHook` builds with
++`features.build_feature_vector`, the same call the data collector used to make the
++training samples, so training and prediction see the same input.
++
++Confidence is the classifier's own probability estimate. It is not calibrated: a
++score of 0.8 does not mean the prediction is right 80% of the time. The confidence
++cutoff table on the Model performance page shows how often predictions above each
++cutoff were right on the held-out test recordings.
++
++Smoothing across frames (a voting window) is Stage 7. Each Prediction here describes
++one frame.
++"""
++from __future__ import annotations
++
++import json
++import threading
++import time
++import warnings
++from dataclasses import dataclass
++from pathlib import Path
++from typing import Optional, Sequence, Tuple
++
++import numpy as np
++
++import config
++import features
++
++NO_HAND, UNRECOGNISED, RECOGNISED, ERROR = "no_hand", "unrecognised", "recognised", "error"
++
++
++class PredictorError(RuntimeError):
++    """The saved model cannot be used. The message says what to do."""
++
++
++class NotTrainedError(PredictorError):
++    """No model has been trained yet."""
++
++
++@dataclass(frozen=True)
++class Prediction:
++    """The classifier's answer for one frame."""
++
++    status: str                                   # NO_HAND, UNRECOGNISED, RECOGNISED or ERROR
++    label: Optional[str] = None                   # the accepted gesture; None unless RECOGNISED
++    confidence: Optional[float] = None            # highest class probability; None without a hand
++    top: Tuple[Tuple[str, float], ...] = ()       # (gesture, probability), highest first
++    threshold: float = config.DEFAULT_CONFIDENCE_THRESHOLD
++    inference_ms: Optional[float] = None          # time spent in the classifier
++    at: float = 0.0                               # time.time() when the frame was classified
++    error: Optional[str] = None
++
++
++def is_fresh(prediction: Optional[Prediction], max_age_s: float = 2.0) -> bool:
++    """True if the prediction describes a frame from the last `max_age_s` seconds."""
++    return prediction is not None and (time.time() - prediction.at) < max_age_s
++
++
++def _read_json(path: Path, what: str):
++    try:
++        return json.loads(path.read_text())
++    except (OSError, json.JSONDecodeError) as exc:
++        raise PredictorError(f"Cannot read {path.name} ({what}): {exc}. Train the model again.") from exc
++
++
++def _parse_label_mapping(raw, path: Path) -> list:
++    """{"0": "fist", "1": "open_palm"} -> ["fist", "open_palm"]."""
++    if not isinstance(raw, dict) or not raw:
++        raise PredictorError(f"{path.name} is not a label mapping. Train the model again.")
++    try:
++        indexed = {int(k): v for k, v in raw.items()}
++    except (TypeError, ValueError):
++        raise PredictorError(f"{path.name} has keys that are not class numbers. Train the model again.")
++    if sorted(indexed) != list(range(len(indexed))) or not all(
++            isinstance(v, str) and v for v in indexed.values()):
++        raise PredictorError(f"{path.name} is incomplete or has empty gesture names. Train the model again.")
++    labels = [indexed[i] for i in range(len(indexed))]
++    if len(set(labels)) != len(labels):
++        raise PredictorError(f"{path.name} lists the same gesture twice. Train the model again.")
++    return labels
++
++
++class Predictor:
++    """A loaded classifier plus its label mapping. Thread-safe for `predict`."""
++
++    def __init__(self, model, labels: Sequence[str], feature_mode: str = config.FEATURE_MODE,
++                 threshold: float = config.DEFAULT_CONFIDENCE_THRESHOLD,
++                 top_k: int = config.TOP_PREDICTIONS, trained_at: Optional[str] = None,
++                 warnings_: Sequence[str] = ()) -> None:
++        if not 0 < threshold <= 1:
++            raise ValueError(f"The confidence threshold must be above 0 and at most 1, got {threshold}.")
++        if top_k < 1:
++            raise ValueError("top_k must be at least 1.")
++        for attr in ("predict_proba", "classes_"):
++            if not hasattr(model, attr):
++                raise PredictorError("The saved model is not a trained classifier. Train the model again.")
++        self.model = model
++        self.labels = list(labels)
++        self.feature_mode = feature_mode
++        self.feature_length = features.feature_length(feature_mode)
++        self.threshold = float(threshold)
++        self.top_k = int(top_k)
++        self.trained_at = trained_at
++        self.warnings = list(warnings_)
++
++        n_in = getattr(model, "n_features_in_", None)
++        if n_in is not None and n_in != self.feature_length:
++            raise PredictorError(
++                f"The model expects {n_in} features but '{feature_mode}' mode produces "
++                f"{self.feature_length}. Train the model again with the current setting.")
++        try:
++            self._class_names = [self.labels[int(c)] for c in model.classes_]
++        except (IndexError, TypeError, ValueError):
++            raise PredictorError(
++                "The model and label_mapping.json do not match. Train the model again "
++                "so both are written together.")
++
++        # A random forest with n_jobs=-1 starts a thread pool for every call. For one
++        # frame that costs more than it saves (measured: about 26 ms per frame against
++        # 10 ms single-threaded for the 300-tree forest).
++        if "n_jobs" in model.get_params(deep=False):
++            model.set_params(n_jobs=1)
++
++    @classmethod
++    def load(cls, model_path: Optional[Path] = None, labels_path: Optional[Path] = None,
++             report_path: Optional[Path] = None, feature_mode: str = config.FEATURE_MODE,
++             threshold: float = config.DEFAULT_CONFIDENCE_THRESHOLD,
++             top_k: int = config.TOP_PREDICTIONS) -> "Predictor":
++        """Load the saved model, label mapping and (if present) training report.
++
++        Raises NotTrainedError when there is no model yet, and PredictorError when the
++        files are unreadable, do not match each other, or were made for another
++        feature mode.
++        """
++        import joblib
++
++        model_path = Path(model_path or config.MODEL_PATH)
++        labels_path = Path(labels_path or config.LABELS_PATH)
++        report_path = Path(report_path or config.REPORT_PATH)
++
++        if not model_path.exists():
++            raise NotTrainedError(
++                "No trained model yet. Record at least 2 gestures on the Data collector page, "
++                "then train a model on the Model performance page.")
++        if not labels_path.exists():
++            raise PredictorError(
++                f"{labels_path.name} is missing, so predictions cannot be named. "
++                "Train the model again to recreate it.")
++        labels = _parse_label_mapping(_read_json(labels_path, "label mapping"), labels_path)
++
++        notes = []
++        trained_at = None
++        if report_path.exists():
++            report = _read_json(report_path, "training report")
++            trained_at = report.get("trained_at")
++            trained_mode = report.get("feature_mode")
++            if trained_mode and trained_mode != feature_mode:
++                raise PredictorError(
++                    f"The model was trained on '{trained_mode}' features but the app is set to "
++                    f"'{feature_mode}'. Train the model again, or set FEATURE_MODE in config.py "
++                    f"back to '{trained_mode}'.")
++            if report.get("labels") not in (None, labels):
++                raise PredictorError(
++                    "label_mapping.json and training_report.json list different gestures. "
++                    "Train the model again.")
++            import sklearn
++            saved = report.get("sklearn_version")
++            if saved and saved != sklearn.__version__:
++                notes.append(
++                    f"The model was saved with scikit-learn {saved} and is running on "
++                    f"{sklearn.__version__}. Train again if predictions look wrong.")
++
++        try:
++            with warnings.catch_warnings(record=True) as caught:
++                warnings.simplefilter("always")
++                model = joblib.load(model_path)
++        except Exception as exc:              # corrupted file, missing class, wrong format
++            raise PredictorError(
++                f"Cannot load {model_path.name}: {type(exc).__name__}: {exc}. "
++                "Train the model again.") from exc
++        version_warnings = [w for w in caught if w.category.__name__ == "InconsistentVersionWarning"]
++        if version_warnings and not notes:   # no report to name the versions, so pass on sklearn's text
++            notes.append(f"{version_warnings[0].message} Train again if predictions look wrong.")
++
++        return cls(model, labels, feature_mode, threshold, top_k, trained_at, notes)
++
++    def predict(self, vector: Optional[np.ndarray]) -> Prediction:
++        """Classify one feature vector. `None` (no hand in the frame) gives NO_HAND."""
++        now = time.time()
++        if vector is None:
++            return Prediction(NO_HAND, threshold=self.threshold, at=now)
++        x = np.asarray(vector, dtype=np.float32).reshape(1, -1)
++        if x.shape[1] != self.feature_length:
++            raise PredictorError(
++                f"Got a feature vector of length {x.shape[1]}, expected {self.feature_length}.")
++        if not np.isfinite(x).all():
++            raise PredictorError("The feature vector contains NaN or infinity.")
++
++        start = time.perf_counter()
++        proba = np.asarray(self.model.predict_proba(x)[0], dtype=float)
++        elapsed_ms = (time.perf_counter() - start) * 1000
++
++        order = np.argsort(-proba, kind="stable")[: self.top_k]     # ties keep class order
++        top = tuple((self._class_names[i], float(proba[i])) for i in order)
++        best_label, best_p = top[0]
++        if best_p >= self.threshold:
++            return Prediction(RECOGNISED, best_label, best_p, top, self.threshold, elapsed_ms, now)
++        return Prediction(UNRECOGNISED, None, best_p, top, self.threshold, elapsed_ms, now)
++
++
++_NOTHING = object()          # marks an empty mailbox (None means "frame without a hand")
++
++
++class LiveRecognizer:
++    """Classifies the newest frame on a worker thread.
++
++    The video thread calls `offer()` for every frame; the UI thread reads `latest()`.
++    The worker thread stops by itself after `idle_exit_s` seconds without frames (for
++    example after the camera is stopped) and starts again on the next `offer()`.
++    """
++
++    def __init__(self, predictor: Optional[Predictor] = None, idle_exit_s: float = 5.0) -> None:
++        self._cond = threading.Condition()
++        self._predictor = predictor
++        self._pending = _NOTHING
++        self._latest: Optional[Prediction] = None
++        self._thread: Optional[threading.Thread] = None
++        self._generation = 0           # bumped on reset or model change; stale results are dropped
++        self._idle_exit_s = idle_exit_s
++        self.frames_skipped = 0        # frames replaced before the worker reached them
++
++    # --- UI thread ---------------------------------------------------------------
++    @property
++    def predictor(self) -> Optional[Predictor]:
++        with self._cond:
++            return self._predictor
++
++    def use(self, predictor: Optional[Predictor]) -> None:
++        """Switch model (for example after retraining). Clears the previous result."""
++        with self._cond:
++            if predictor is self._predictor:
++                return
++            self._predictor = predictor
++            self._clear()
++
++    def reset(self) -> None:
++        """Forget the last result, for example when the camera stops."""
++        with self._cond:
++            self._clear()
++
++    def latest(self) -> Optional[Prediction]:
++        with self._cond:
++            return self._latest
++
++    def is_running(self) -> bool:
++        with self._cond:
++            return self._thread is not None
++
++    def _clear(self) -> None:
++        self._pending = _NOTHING
++        self._latest = None
++        self._generation += 1
++
++    # --- video thread ------------------------------------------------------------
++    def offer(self, vector: Optional[np.ndarray]) -> None:
++        """Hand over the newest feature vector. Returns at once; never runs the model."""
++        with self._cond:
++            if self._predictor is None:
++                return
++            if self._pending is not _NOTHING:
++                self.frames_skipped += 1
++            self._pending = None if vector is None else np.array(vector, dtype=np.float32)
++            if self._thread is None:
++                self._thread = threading.Thread(target=self._run, name="gesture-recognizer",
++                                                daemon=True)
++                self._thread.start()
++            self._cond.notify()
++
++    # --- worker thread -----------------------------------------------------------
++    def _run(self) -> None:
++        while True:
++            with self._cond:
++                idle_since = time.monotonic()
++                while self._pending is _NOTHING:
++                    remaining = self._idle_exit_s - (time.monotonic() - idle_since)
++                    if remaining <= 0:
++                        self._thread = None          # offer() starts a new worker when frames return
++                        return
++                    self._cond.wait(remaining)
++                vector, self._pending = self._pending, _NOTHING
++                predictor, generation = self._predictor, self._generation
++            if predictor is None:
++                continue
++            try:
++                result = predictor.predict(vector)
++            except Exception as exc:                 # keep the worker alive, surface the message
++                result = Prediction(ERROR, threshold=predictor.threshold, at=time.time(),
++                                    error=f"{type(exc).__name__}: {exc}")
++            with self._cond:
++                if generation == self._generation:   # ignore results for a model that was swapped out
++                    self._latest = result
+--- a/pytest.ini
++++ b/pytest.ini
+@@ -0,0 +1,5 @@
++[pytest]
++# Only collect the real tests. docs/handoff/snapshots holds a copy of older tests
++# with the same file names, which otherwise breaks collection from the project root.
++testpaths = tests
++norecursedirs = .venv docs __pycache__
+--- a/tests/test_predictor.py
++++ b/tests/test_predictor.py
+@@ -0,0 +1,382 @@
++"""Stage 5 tests for predictor.py.
++
++The model here is trained by train_model.train() on SYNTHETIC data, so these tests
++check the code: loading, file checks, the confidence threshold, top predictions, the
++worker thread and the hand-over from the video thread. They say nothing about how
++well a model trained on real gesture recordings will recognise anything.
++"""
++import json
++import shutil
++import sys
++import threading
++import time
++from pathlib import Path
++
++import numpy as np
++import pytest
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++
++import data_collector as dc  # noqa: E402
++import features  # noqa: E402
++import predictor as pr  # noqa: E402
++import train_model as tm  # noqa: E402
++from vision import Detection, FrameProcessor, HandDetection, LandmarkHook  # noqa: E402
++
++N = features.feature_length("hands")
++LABELS = ["fist", "open_palm", "peace"]
++
++
++def hand(seed):
++    return np.random.default_rng(seed).uniform(0.2, 0.8, size=(21, 3)).astype(np.float32)
++
++
++# Each synthetic gesture is a fixed right-hand shape plus small jitter per sample, built
++# through features.build_feature_vector exactly as the collector does.
++SHAPES = {label: hand(10 + i) for i, label in enumerate(LABELS)}
++
++
++def vector_for(label, rng=None, jitter=0.0):
++    pts = SHAPES[label]
++    if rng is not None:
++        pts = pts + rng.normal(scale=jitter, size=pts.shape).astype(np.float32)
++    return features.build_feature_vector(pts, None, None, "hands")
++
++
++@pytest.fixture(scope="module")
++def trained(tmp_path_factory):
++    """Train once with the real pipeline. Returns the folder holding the saved files."""
++    root = tmp_path_factory.mktemp("trained")
++    store = dc.DatasetStore(root / "s.csv", root / "s.json", "hands")
++    rng = np.random.default_rng(0)
++    for label in LABELS:
++        for s in range(4):
++            r = dc.RecordingResult(f"{label}-{s}", label, "", "2026-01-01T00:00:00")
++            r.samples = [vector_for(label, rng, 0.01) for _ in range(25)]
++            store.append(r)
++    tm.train(store, model_path=root / "model.joblib", labels_path=root / "labels.json",
++             report_path=root / "report.json")
++    return root
++
++
++def paths(root):
++    return dict(model_path=root / "model.joblib", labels_path=root / "labels.json",
++                report_path=root / "report.json")
++
++
++def copy_of(trained, tmp_path):
++    for name in ("model.joblib", "labels.json", "report.json"):
++        shutil.copy(trained / name, tmp_path / name)
++    return tmp_path
++
++
++# --- loading -------------------------------------------------------------------
++
++def test_loads_saved_model_and_labels(trained):
++    p = pr.Predictor.load(**paths(trained))
++    assert p.labels == LABELS
++    assert p.feature_length == N
++    assert p.trained_at
++    assert p.warnings == []
++
++
++def test_missing_model_is_not_trained(tmp_path):
++    with pytest.raises(pr.NotTrainedError, match="Model performance"):
++        pr.Predictor.load(**paths(tmp_path))
++
++
++def test_missing_label_mapping_is_a_clear_error(trained, tmp_path):
++    root = copy_of(trained, tmp_path)
++    (root / "labels.json").unlink()
++    with pytest.raises(pr.PredictorError, match="labels.json is missing") as info:
++        pr.Predictor.load(**paths(root))
++    assert not isinstance(info.value, pr.NotTrainedError)
++
++
++@pytest.mark.parametrize("content, message", [
++    ("not json", "Cannot read labels.json"),
++    ("[]", "not a label mapping"),
++    ('{"a": "fist"}', "not class numbers"),
++    ('{"0": "fist", "2": "peace"}', "incomplete"),
++    ('{"0": "fist", "1": "fist"}', "same gesture twice"),
++])
++def test_bad_label_mapping_is_rejected(trained, tmp_path, content, message):
++    root = copy_of(trained, tmp_path)
++    (root / "labels.json").write_text(content)
++    with pytest.raises(pr.PredictorError, match=message):
++        pr.Predictor.load(**paths(root))
++
++
++def test_mapping_with_fewer_gestures_than_the_model_is_rejected(trained, tmp_path):
++    root = copy_of(trained, tmp_path)
++    (root / "labels.json").write_text(json.dumps({"0": "fist", "1": "open_palm"}))
++    (root / "report.json").unlink()                 # leave only the model to compare with
++    with pytest.raises(pr.PredictorError, match="do not match"):
++        pr.Predictor.load(**paths(root))
++
++
++def test_report_and_mapping_must_agree(trained, tmp_path):
++    root = copy_of(trained, tmp_path)
++    (root / "labels.json").write_text(json.dumps({"0": "a", "1": "b", "2": "c"}))
++    with pytest.raises(pr.PredictorError, match="different gestures"):
++        pr.Predictor.load(**paths(root))
++
++
++def test_feature_mode_mismatch_is_rejected(trained):
++    with pytest.raises(pr.PredictorError, match="'hands' features but the app is set to 'hands\\+pose'"):
++        pr.Predictor.load(**paths(trained), feature_mode="hands+pose")
++
++
++def test_feature_length_is_checked_without_a_report(trained, tmp_path):
++    root = copy_of(trained, tmp_path)
++    (root / "report.json").unlink()
++    with pytest.raises(pr.PredictorError, match="expects 126 features"):
++        pr.Predictor.load(**paths(root), feature_mode="hands+pose")
++
++
++def test_corrupted_model_file_is_a_clear_error(trained, tmp_path):
++    root = copy_of(trained, tmp_path)
++    (root / "model.joblib").write_bytes(b"not a model")
++    with pytest.raises(pr.PredictorError, match="Cannot load model.joblib"):
++        pr.Predictor.load(**paths(root))
++
++
++def test_older_scikit_learn_version_is_noted(trained, tmp_path):
++    root = copy_of(trained, tmp_path)
++    report = json.loads((root / "report.json").read_text())
++    report["sklearn_version"] = "0.0.1"
++    (root / "report.json").write_text(json.dumps(report))
++    p = pr.Predictor.load(**paths(root))
++    assert any("0.0.1" in w for w in p.warnings)
++
++
++def test_bad_threshold_is_rejected(trained):
++    for bad in (0, -0.1, 1.5):
++        with pytest.raises(ValueError):
++            pr.Predictor.load(**paths(trained), threshold=bad)
++
++
++# --- predicting ----------------------------------------------------------------
++
++def test_no_hand_gives_no_hand_without_running_the_model(trained):
++    p = pr.Predictor.load(**paths(trained))
++    out = p.predict(None)
++    assert out.status == pr.NO_HAND
++    assert out.label is None and out.confidence is None and out.top == ()
++
++
++@pytest.mark.parametrize("label", LABELS)
++def test_each_trained_shape_is_recognised(trained, label):
++    p = pr.Predictor.load(**paths(trained))
++    out = p.predict(vector_for(label))
++    assert out.status == pr.RECOGNISED
++    assert out.label == label
++    assert out.confidence >= p.threshold
++    assert out.top[0] == (label, out.confidence)
++    assert out.inference_ms is not None and out.inference_ms >= 0
++
++
++def test_below_threshold_is_unrecognised_and_names_no_gesture(trained):
++    p = pr.Predictor.load(**paths(trained), threshold=1.0)
++    out = p.predict(vector_for("fist"))
++    if out.confidence < 1.0:
++        assert out.status == pr.UNRECOGNISED
++        assert out.label is None                    # never a guess
++        assert out.top                              # scores are still available to inspect
++    else:                                           # a forest can be unanimous; then it is accepted
++        assert out.status == pr.RECOGNISED
++
++
++def test_threshold_is_inclusive(trained):
++    p = pr.Predictor.load(**paths(trained))
++    conf = p.predict(vector_for("peace")).confidence
++    at = pr.Predictor.load(**paths(trained), threshold=conf).predict(vector_for("peace"))
++    above = pr.Predictor.load(**paths(trained), threshold=min(1.0, conf + 1e-6)).predict(vector_for("peace"))
++    assert at.status == pr.RECOGNISED
++    if conf + 1e-6 <= 1.0:
++        assert above.status == pr.UNRECOGNISED
++
++
++def test_top_predictions_are_sorted_and_limited(trained):
++    p = pr.Predictor.load(**paths(trained), top_k=2)
++    out = p.predict(vector_for("open_palm"))
++    assert len(out.top) == 2
++    scores = [s for _, s in out.top]
++    assert scores == sorted(scores, reverse=True)
++    assert {g for g, _ in out.top} <= set(LABELS)
++    full = pr.Predictor.load(**paths(trained), top_k=10).predict(vector_for("open_palm"))
++    assert len(full.top) == 3                       # never more than the trained gestures
++    assert sum(s for _, s in full.top) == pytest.approx(1.0, abs=1e-6)
++
++
++def test_wrong_vector_length_or_nan_raises(trained):
++    p = pr.Predictor.load(**paths(trained))
++    with pytest.raises(pr.PredictorError, match="length 10"):
++        p.predict(np.zeros(10, np.float32))
++    bad = vector_for("fist").copy()
++    bad[0] = np.nan
++    with pytest.raises(pr.PredictorError, match="NaN"):
++        p.predict(bad)
++
++
++def test_random_forest_is_switched_to_one_thread(trained):
++    p = pr.Predictor.load(**paths(trained))
++    params = p.model.get_params(deep=False)
++    if "n_jobs" in params:
++        assert params["n_jobs"] == 1
++
++
++def test_is_fresh():
++    assert not pr.is_fresh(None)
++    assert pr.is_fresh(pr.Prediction(pr.NO_HAND, at=time.time()))
++    assert not pr.is_fresh(pr.Prediction(pr.NO_HAND, at=time.time() - 5))
++
++
++# --- the worker thread ---------------------------------------------------------
++
++class SlowPredictor:
++    """Stands in for a slow model and records which vectors it was given."""
++
++    threshold = 0.7
++
++    def __init__(self, delay=0.3):
++        self.delay = delay
++        self.seen = []
++        self.started = threading.Event()
++
++    def predict(self, vector):
++        self.started.set()
++        time.sleep(self.delay)
++        self.seen.append(None if vector is None else float(vector[0]))
++        return pr.Prediction(pr.RECOGNISED if vector is not None else pr.NO_HAND,
++                             label="x" if vector is not None else None, at=time.time())
++
++
++def wait_for(cond, timeout=3.0):
++    end = time.monotonic() + timeout
++    while time.monotonic() < end:
++        if cond():
++            return True
++        time.sleep(0.01)
++    return False
++
++
++def test_offer_never_waits_for_a_slow_model():
++    slow = SlowPredictor(delay=0.5)
++    rec = pr.LiveRecognizer(slow)
++    rec.offer(np.ones(3, np.float32))
++    assert slow.started.wait(2)
++    start = time.perf_counter()
++    for i in range(20):                              # the video thread keeps going
++        rec.offer(np.full(3, i, np.float32))
++    assert (time.perf_counter() - start) < 0.1
++
++
++def test_only_the_newest_frame_is_classified():
++    slow = SlowPredictor(delay=0.3)
++    rec = pr.LiveRecognizer(slow)
++    rec.offer(np.zeros(3, np.float32))
++    assert slow.started.wait(2)
++    for i in range(1, 6):
++        rec.offer(np.full(3, i, np.float32))
++    assert wait_for(lambda: len(slow.seen) == 2)
++    assert slow.seen == [0.0, 5.0]                   # frames 1 to 4 were skipped
++    assert rec.frames_skipped == 4
++    assert rec.latest().status == pr.RECOGNISED
++
++
++def test_no_hand_frames_reach_the_model_as_none():
++    slow = SlowPredictor(delay=0)
++    rec = pr.LiveRecognizer(slow)
++    rec.offer(None)
++    assert wait_for(lambda: rec.latest() is not None)
++    assert rec.latest().status == pr.NO_HAND
++
++
++def test_errors_are_reported_and_the_worker_survives():
++    class Broken:
++        threshold = 0.7
++        calls = 0
++
++        def predict(self, vector):
++            Broken.calls += 1
++            if Broken.calls == 1:
++                raise ValueError("bad frame")
++            return pr.Prediction(pr.NO_HAND, at=time.time())
++
++    rec = pr.LiveRecognizer(Broken())
++    rec.offer(np.ones(3, np.float32))
++    assert wait_for(lambda: rec.latest() is not None)
++    assert rec.latest().status == pr.ERROR and "bad frame" in rec.latest().error
++    rec.offer(None)
++    assert wait_for(lambda: rec.latest().status == pr.NO_HAND)
++
++
++def test_without_a_model_offers_are_ignored():
++    rec = pr.LiveRecognizer(None)
++    rec.offer(np.ones(3, np.float32))
++    assert not rec.is_running() and rec.latest() is None
++
++
++def test_reset_and_model_switch_clear_the_result_and_drop_late_answers():
++    slow = SlowPredictor(delay=0.3)
++    rec = pr.LiveRecognizer(slow)
++    rec.offer(np.ones(3, np.float32))
++    assert slow.started.wait(2)
++    rec.reset()                                      # camera stopped while the model was busy
++    assert wait_for(lambda: len(slow.seen) == 1)
++    time.sleep(0.05)
++    assert rec.latest() is None                      # the late answer was dropped
++
++    rec.offer(None)
++    assert wait_for(lambda: rec.latest() is not None)
++    other = SlowPredictor(delay=0)
++    rec.use(other)
++    assert rec.latest() is None and rec.predictor is other
++
++
++def test_worker_stops_when_frames_stop_and_restarts():
++    rec = pr.LiveRecognizer(SlowPredictor(delay=0), idle_exit_s=0.2)
++    rec.offer(None)
++    assert rec.is_running()
++    assert wait_for(lambda: not rec.is_running(), timeout=2)
++    rec.offer(None)
++    assert rec.is_running()
++
++
++# --- end to end: video thread -> features -> recogniser ---------------------------
++
++class FakeDetector:
++    def __init__(self, detection):
++        self.detection = detection
++
++    def detect(self, frame):
++        return self.detection
++
++
++def test_frames_flow_from_the_landmark_hook_to_a_prediction(trained):
++    """The same LandmarkHook output that the collector saves is what gets classified."""
++    det = Detection(hands=[HandDetection("Right", 0.9, SHAPES["peace"])])
++    hook = LandmarkHook(detector_factory=lambda: FakeDetector(det))
++    proc = FrameProcessor(frame_hook=hook)
++
++    class Spy:
++        def __init__(self):
++            self.vectors = []
++
++        def offer(self, v):
++            self.vectors.append(v)
++
++    proc.recorder = Spy()
++    proc.recognizer = pr.LiveRecognizer(pr.Predictor.load(**paths(trained)))
++    proc.process(np.zeros((480, 640, 3), np.uint8))
++
++    assert np.array_equal(proc.recorder.vectors[0], vector_for("peace"))
++    assert wait_for(lambda: proc.recognizer.latest() is not None)
++    out = proc.recognizer.latest()
++    assert out.status == pr.RECOGNISED and out.label == "peace"
++    assert proc.get_stats().error is None
++
++    det.hands = []                                   # hand leaves the frame
++    proc.process(np.zeros((480, 640, 3), np.uint8))
++    assert wait_for(lambda: proc.recognizer.latest().status == pr.NO_HAND)
+--- a/tests/test_status.py
++++ b/tests/test_status.py
+@@ -0,0 +1,154 @@
++"""Status logic shown on the dashboard and performance pages: model state, staleness
++and every state of the recognition panel. Predictions here are hand-made, so these
++tests check what is shown for each state, not how accurate any model is."""
++import sys
++import time
++from pathlib import Path
++
++import pytest
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++
++import predictor as pr  # noqa: E402
++import train_model as tm  # noqa: E402
++import ui  # noqa: E402
++
++TOP = (("peace_sign", 0.84), ("open_palm", 0.11), ("fist", 0.05))
++LOW = (("peace_sign", 0.52), ("open_palm", 0.31), ("fist", 0.17))
++
++
++def fresh(status, **kw):
++    return pr.Prediction(status, at=time.time(), **kw)
++
++
++def card(problem=None, prediction=None, playing=True, live=True, stale=()):
++    return ui.recognition_card(problem, prediction, playing, live, list(stale))
++
++
++# --- staleness -----------------------------------------------------------------
++
++REPORT = {"dataset": {"rows_loaded": 480}, "feature_mode": "hands"}
++
++
++def test_current_model_is_not_stale():
++    assert tm.staleness(REPORT, 480, "hands") == []
++
++
++def test_changed_dataset_is_stale_and_says_by_how_much():
++    reasons = tm.staleness(REPORT, 580, "hands")
++    assert len(reasons) == 1 and "480 samples then, 580 now" in reasons[0]
++
++
++def test_feature_mode_change_is_stale():
++    assert "hands+pose" in tm.staleness(REPORT, 480, "hands+pose")[0]
++
++
++def test_unreadable_dataset_is_not_called_stale():
++    assert tm.staleness(REPORT, None, "hands") == []
++
++
++# --- model state -----------------------------------------------------------------
++
++@pytest.mark.parametrize("problem, stale, expected", [
++    (pr.NotTrainedError("x"), [], ("Not trained", "off")),
++    (pr.PredictorError("x"), [], ("Cannot load", "bad")),
++    (None, ["changed"], ("Retrain needed", "warn")),
++    (None, [], ("Loaded", "ok")),
++])
++def test_model_state(problem, stale, expected):
++    assert ui.model_state(problem, stale) == expected
++
++
++def test_pct_never_invents_a_number():
++    assert ui.pct(None) == "n/a"
++    assert ui.pct(0.843) == "84%"
++
++
++# --- recognition panel states ------------------------------------------------------
++
++STATES = {
++    "not trained": dict(problem=pr.NotTrainedError("x")),
++    "cannot load": dict(problem=pr.PredictorError("Cannot load model.joblib")),
++    "camera off": dict(playing=False, live=False),
++    "connecting": dict(playing=True, live=False),
++    "starting": dict(prediction=None),
++    "no hand": dict(prediction="no_hand"),
++    "unrecognised": dict(prediction="unrecognised"),
++    "recognised": dict(prediction="recognised"),
++    "error": dict(prediction="error"),
++}
++
++
++def build(name):
++    kw = dict(STATES[name])
++    p = kw.get("prediction")
++    if p == "no_hand":
++        kw["prediction"] = fresh(pr.NO_HAND)
++    elif p == "unrecognised":
++        kw["prediction"] = fresh(pr.UNRECOGNISED, confidence=0.52, top=LOW, threshold=0.7)
++    elif p == "recognised":
++        kw["prediction"] = fresh(pr.RECOGNISED, label="peace_sign", confidence=0.84, top=TOP, threshold=0.7)
++    elif p == "error":
++        kw["prediction"] = fresh(pr.ERROR, error="ValueError: bad frame")
++    return card(**kw)
++
++
++HEADLINES = {
++    "not trained": "No trained model", "cannot load": "Model cannot be used",
++    "camera off": "Waiting for the camera", "connecting": "Waiting for video",
++    "starting": "Waiting for the first prediction", "no hand": "No hand detected",
++    "unrecognised": "Unrecognised", "recognised": "peace_sign", "error": "Prediction failed",
++}
++
++
++@pytest.mark.parametrize("name", list(STATES))
++def test_each_state_has_its_own_headline(name):
++    html = build(name)
++    assert f">{HEADLINES[name]}</div>" in html
++    others = [h for n, h in HEADLINES.items() if n != name and h != "peace_sign"]
++    assert not any(f">{h}</div>" in html for h in others)
++
++
++def test_states_are_all_different():
++    assert len({build(n) for n in STATES}) == len(STATES)
++
++
++def test_unrecognised_never_presents_a_gesture_as_the_result():
++    html = build("unrecognised")
++    assert 'class="big">Unrecognised<' in html
++    assert 'class="big ok"' not in html
++    assert "none high enough to count" in html          # the scores are labelled as not results
++    assert "below the 70% threshold" in html
++
++
++def test_recognised_shows_label_confidence_threshold_and_calibration_note():
++    html = build("recognised")
++    assert 'class="big ok">peace_sign<' in html
++    assert "Confidence <b>84%</b>" in html and "Threshold 70%" in html
++    assert "not a calibrated probability" in html
++
++
++def test_stale_prediction_is_not_shown():
++    old = pr.Prediction(pr.RECOGNISED, label="peace_sign", confidence=0.9, top=TOP, at=time.time() - 10)
++    html = card(prediction=old)
++    assert "peace_sign" not in html and "Waiting for the first prediction" in html
++
++
++def test_camera_off_hides_an_old_result():
++    html = card(prediction=fresh(pr.RECOGNISED, label="peace_sign", confidence=0.9, top=TOP),
++                playing=False, live=False)
++    assert "peace_sign" not in html
++
++
++def test_retrain_needed_is_shown_alongside_a_result():
++    html = card(prediction=fresh(pr.RECOGNISED, label="fist", confidence=0.9, top=TOP),
++                stale=["The dataset has changed since this model was trained."])
++    assert "Retrain needed" in html and "dataset has changed" in html
++    assert html.index("Recognised") < html.index("Retrain needed")     # result first
++
++
++def test_labels_and_errors_are_escaped():
++    html = card(prediction=fresh(pr.ERROR, error="<script>x</script>"))
++    assert "<script>" not in html
++    html = card(prediction=fresh(pr.RECOGNISED, label="<b>x</b>", confidence=0.9, top=(("<b>x</b>", 0.9),)))
++    assert "<b>x</b>" not in html

@@ -1,0 +1,16 @@
+# Stage 1 — dashboard + camera
+streamlit>=1.40
+streamlit-webrtc==0.78.1  # ui.py styles this component's iframe; re-check after upgrading
+opencv-python-headless>=4.9
+numpy>=1.26
+pandas>=2.1
+
+# Testing
+pytest>=8.0
+
+# Stage 2 — landmarks (also run: python download_models.py)
+mediapipe>=0.10.14
+
+# Stage 4: model training
+scikit-learn>=1.4
+joblib>=1.3
