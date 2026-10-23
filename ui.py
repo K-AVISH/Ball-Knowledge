@@ -763,6 +763,18 @@ _IFRAME_SCRIPT = """
 """ % __import__("json").dumps(_IFRAME_CSS)
 
 
+def _ice_servers() -> list:
+    """STUN/TURN servers for the camera connection, from ice_servers in Streamlit secrets.
+
+    On localhost browser and server are on the same machine, so none are needed (and without
+    secrets the list stays empty, so the camera also works offline). A hosted copy needs a TURN
+    server: see .streamlit/secrets.toml.example."""
+    try:
+        return [dict(server) for server in st.secrets.get("ice_servers", [])]
+    except Exception:                # no secrets file at all
+        return []
+
+
 def camera_widget(key: str, processor: FrameProcessor):
     """Render the camera control and video; returns the WebRTC context."""
 
@@ -789,10 +801,8 @@ def camera_widget(key: str, processor: FrameProcessor):
         video_html_attrs={"autoPlay": True, "controls": False, "muted": True,
                           "playsInline": True, "style": {"width": "100%"}},
         translations={"start": "Start camera", "stop": "Stop camera"},
-        # Browser and server are on the same machine, so no STUN server is needed.
-        # Without these, the library asks Google's STUN server and the camera fails offline.
-        frontend_rtc_configuration={"iceServers": []},
-        server_rtc_configuration={"iceServers": []},
+        frontend_rtc_configuration={"iceServers": _ice_servers()},
+        server_rtc_configuration={"iceServers": _ice_servers()},
     )
     st.html(_IFRAME_SCRIPT, unsafe_allow_javascript=True)
     return ctx

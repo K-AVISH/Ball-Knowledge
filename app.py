@@ -17,6 +17,18 @@ st.set_page_config(
 )
 ui.inject_css()
 
+
+@st.cache_resource(show_spinner=False)
+def fetch_hand_model() -> None:
+    """A fresh server (such as Streamlit Community Cloud) has no models/mediapipe/, which
+    is not in git: download the hand model once. The camera picks it up by itself."""
+    import download_models
+    if not (config.MEDIAPIPE_MODELS_DIR / "hand_landmarker.task").exists():
+        download_models.download("hand_landmarker.task", download_models.MODELS["hand_landmarker.task"])
+
+
+fetch_hand_model()
+
 collector = st.Page("views/collector.py", title="Data collector")
 pages = [
     st.Page("views/dashboard.py", title="Live dashboard", default=True),

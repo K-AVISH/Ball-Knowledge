@@ -31,3 +31,10 @@ __pycache__/
 # Recorded gesture data (personal)
 /data/samples.csv
 /docs/handoff/snapshots/*/data/samples.csv
+
+# Copies made by Finder/iCloud ("app 2.py", "models 2"): never deploy them
+* 2
+* 2.*
+
+# Streamlit secrets (TURN server login): see .streamlit/secrets.toml.example
+/.streamlit/secrets.toml
