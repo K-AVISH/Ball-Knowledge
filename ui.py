@@ -5,13 +5,16 @@ from __future__ import annotations
 import base64
 import functools
 import html
+import os
 import time
+import urllib.parse
 from pathlib import Path
 from typing import Dict, Optional
 
 import av
 import streamlit as st
 from streamlit_webrtc import WebRtcMode, webrtc_streamer
+from streamlit_webrtc.credentials import get_available_ice_servers
 
 import config
 import dataset_manager as dm
@@ -763,16 +766,39 @@ _IFRAME_SCRIPT = """
 """ % __import__("json").dumps(_IFRAME_CSS)
 
 
-def _ice_servers() -> list:
-    """STUN/TURN servers for the camera connection, from ice_servers in Streamlit secrets.
+# Secrets that let streamlit-webrtc fetch a short-lived login from a free TURN provider:
+# a Hugging Face token, a Cloudflare TURN key (two values) or a Twilio account (two values).
+_TURN_PROVIDER_SECRETS = ("HF_TOKEN", "CLOUDFLARE_TURN_KEY_ID", "CLOUDFLARE_TURN_KEY_API_TOKEN",
+                          "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN")
+_GOOGLE_STUN = {"urls": ["stun:stun.l.google.com:19302"]}
 
-    On localhost browser and server are on the same machine, so none are needed (and without
-    secrets the list stays empty, so the camera also works offline). A hosted copy needs a TURN
-    server: see .streamlit/secrets.toml.example."""
+
+def _on_localhost() -> bool:
+    """True when the page was opened on this computer (or there is no browser, as in tests)."""
+    host = urllib.parse.urlsplit("//" + (st.context.headers.get("Host") or "")).hostname
+    return host in (None, "localhost", "127.0.0.1", "::1")
+
+
+def _ice_servers() -> list:
+    """STUN/TURN servers for the camera connection.
+
+    On localhost browser and server are on the same machine, so none are needed, and the camera
+    also works offline. A hosted copy needs a TURN server, set in Streamlit secrets (see
+    .streamlit/secrets.toml.example): either ice_servers listed in full, or a free provider's
+    token from _TURN_PROVIDER_SECRETS, which streamlit-webrtc turns into a login (falling back to
+    Google's STUN server if that fails). Without either, a hosted copy gets the STUN server only,
+    which connects on some networks but not most."""
     try:
-        return [dict(server) for server in st.secrets.get("ice_servers", [])]
+        secrets = st.secrets.to_dict()
     except Exception:                # no secrets file at all
-        return []
+        secrets = {}
+    if secrets.get("ice_servers"):
+        return [dict(server) for server in secrets["ice_servers"]]
+    provider = {name: str(secrets[name]) for name in _TURN_PROVIDER_SECRETS if secrets.get(name)}
+    if provider or any(os.environ.get(name) for name in _TURN_PROVIDER_SECRETS):
+        os.environ.update(provider)  # streamlit-webrtc reads these names from the environment
+        return list(get_available_ice_servers())
+    return [] if _on_localhost() else [_GOOGLE_STUN]
 
 
 def camera_widget(key: str, processor: FrameProcessor):
